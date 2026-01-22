@@ -93,8 +93,45 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
         final_body += f"<div class='page-break'></div><div class='header'><h2>Answer Key</h2><p>{details_dict['Subject']}</p></div><div class='content'>{ai_answers}</div>"
 
     logo_html = f'<img src="{logo_data}" class="logo">' if logo_data else ''
-    css_style = "body { font-family: 'Roboto', sans-serif; padding: 40px; max-width: 900px; margin: auto; line-height: 1.5; } .main-container { border: 2px solid #000; padding: 30px; min-height: 950px; position: relative; } .header-container { display: flex; align-items: center; border-bottom: 2px double #000; padding-bottom: 15px; margin-bottom: 20px; } .logo { max-width: 100px; max-height: 100px; margin-right: 20px; } .header-text { flex-grow: 1; text-align: center; } .header-text h1 { margin: 0; font-size: 32px; text-transform: uppercase; color: #d32f2f; } .info-table { width: 100%; margin-top: 10px; border-collapse: collapse; } .info-table td { padding: 5px; font-weight: bold; border: 1px solid #ddd; } .question-box { margin-bottom: 15px; font-size: 16px; } .page-break { page-break-before: always; } .footer { position: absolute; bottom: 10px; width: 100%; text-align: center; font-size: 10px; color: #555; }"
-    return f"<!DOCTYPE html><html><head><meta charset='UTF-8'><title>{details_dict['Topic']}</title><link href='https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari&family=Roboto&display=swap' rel='stylesheet'><style>{css_style}</style></head><body><div class='main-container'><div class='header-container'>{logo_html}<div class='header-text'><h1>{coaching}</h1></div></div><table class='info-table'><tr><td>Exam: {details_dict['Exam Name']}</td><td>Subject: {details_dict['Subject']}</td></tr><tr><td>Time: {details_dict['Time']}</td><td>Marks: {details_dict['Marks']}</td></tr><tr><td colspan='2' style='text-align:center; background-color:#eee;'>Topic: {details_dict['Topic']}</td></tr></table><div style='font-size:12px; font-style:italic; margin:15px 0; padding:8px; background:#f9f9f9; border-left:4px solid #444;'>Instructions: All questions are compulsory.</div><div class='content'>{final_body}</div><div class='footer'>Created by PaperBanao.ai</div></div></body></html>"
+    
+    # HTML STRUCTURE (Broken down for safety)
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset='UTF-8'>
+        <title>{details_dict['Topic']}</title>
+        <link href='https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari&family=Roboto&display=swap' rel='stylesheet'>
+        <style>
+            body {{ font-family: 'Roboto', sans-serif; padding: 40px; max-width: 900px; margin: auto; line-height: 1.5; }}
+            .main-container {{ border: 2px solid #000; padding: 30px; min-height: 950px; position: relative; }}
+            .header-container {{ display: flex; align-items: center; border-bottom: 2px double #000; padding-bottom: 15px; margin-bottom: 20px; }}
+            .logo {{ max-width: 100px; max-height: 100px; margin-right: 20px; }}
+            .header-text {{ flex-grow: 1; text-align: center; }}
+            .header-text h1 {{ margin: 0; font-size: 32px; text-transform: uppercase; color: #d32f2f; }}
+            .info-table {{ width: 100%; margin-top: 10px; border-collapse: collapse; }}
+            .info-table td {{ padding: 5px; font-weight: bold; border: 1px solid #ddd; }}
+            .question-box {{ margin-bottom: 15px; font-size: 16px; }}
+            .page-break {{ page-break-before: always; }}
+            .footer {{ position: absolute; bottom: 10px; width: 100%; text-align: center; font-size: 10px; color: #555; }}
+        </style>
+    </head>
+    <body>
+        <div class='main-container'>
+            <div class='header-container'>{logo_html}<div class='header-text'><h1>{coaching}</h1></div></div>
+            <table class='info-table'>
+                <tr><td>Exam: {details_dict['Exam Name']}</td><td>Subject: {details_dict['Subject']}</td></tr>
+                <tr><td>Time: {details_dict['Time']}</td><td>Marks: {details_dict['Marks']}</td></tr>
+                <tr><td colspan='2' style='text-align:center; background-color:#eee;'>Topic: {details_dict['Topic']}</td></tr>
+            </table>
+            <div style='font-size:12px; font-style:italic; margin:15px 0; padding:8px; background:#f9f9f9; border-left:4px solid #444;'>Instructions: All questions are compulsory.</div>
+            <div class='content'>{final_body}</div>
+            <div class='footer'>Created by PaperBanao.ai</div>
+        </div>
+    </body>
+    </html>
+    """
+    return html_content
 
 # --- 4. UI Setup ---
 st.markdown('<div class="main-header">📄 PaperBanao.ai</div>', unsafe_allow_html=True)
@@ -122,7 +159,6 @@ with st.sidebar:
             for m in text_candidates:
                 if m in all_models:
                     model_text = genai.GenerativeModel(m)
-                    # st.sidebar.success(f"Text Model: {m}") # Debug
                     break
             
             # 2. FIND VISION MODEL
@@ -130,11 +166,10 @@ with st.sidebar:
             for m in vision_candidates:
                 if m in all_models:
                     model_vision = genai.GenerativeModel(m)
-                    # st.sidebar.success(f"Vision Model: {m}") # Debug
                     break
             
             if not model_text: st.error("❌ No Text AI Model found.")
-            if not model_vision: st.warning("⚠️ No Vision AI Model found (Image questions won't work).")
+            if not model_vision: st.warning("⚠️ No Vision AI Model found.")
 
         except Exception as e: st.error(f"API Error: {e}")
 
@@ -175,7 +210,6 @@ with st.sidebar:
                             full_prompt = [f"Create 1 MCQ {lang_hint}. Instruction: {diagram_prompt}. Format: Question text, then (A)..", img_pil]
                             
                             response = model_vision.generate_content(full_prompt)
-                            # Append to session state
                             sep = "\n\n" if st.session_state.manual_text_content else ""
                             st.session_state.manual_text_content += sep + response.text.strip()
                             st.session_state.manual_uploaded_images.append(diagram_img_upload)
@@ -211,4 +245,16 @@ if btn_final:
         final_manual_text = st.session_state.manual_text_content
         final_manual_images = st.session_state.manual_uploaded_images
         logo_b64 = get_image_base64(final_logo)
-        details = { "Exam Name": exam_name, "Subject": subject, "Topic
+        
+        # FIXED: Dictionary written clearly to avoid copy-paste errors
+        details = {
+            "Exam Name": exam_name,
+            "Subject": subject,
+            "Topic": topic,
+            "Time": time_limit,
+            "Marks": max_marks
+        }
+        
+        final_html = create_html_paper(ai_text_final, final_manual_text, final_manual_images, coaching_name, logo_b64, details, num_questions)
+        st.balloons()
+        st.download_button("📥 Download HTML", final_html, "paper.html", "text/html")
