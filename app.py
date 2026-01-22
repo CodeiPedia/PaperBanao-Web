@@ -3,7 +3,7 @@ import google.generativeai as genai
 import os
 import base64
 import time
-import re  # New Import for Smart Formatting
+import re
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(page_title="PaperBanao.ai", page_icon="📄", layout="wide")
@@ -29,33 +29,43 @@ def get_image_base64(image_input):
         return f"data:image/png;base64,{base64_str}"
     except: return None
 
-def smart_format_manual_text(text):
+def process_manual_text_auto_number(text, start_num):
     """
-    This function magically makes manual text look like pro MCQs.
-    It finds 'Q1.' or '1.' and makes it BOLD.
+    Splits text by double newlines (\n\n) and assigns Q numbers automatically.
     """
     if not text: return ""
     
-    formatted_lines = []
-    lines = text.split('\n')
+    # Split by double newline (User must leave gap between questions)
+    raw_questions = re.split(r'\n\s*\n', text)
+    formatted_html_parts = []
     
-    for line in lines:
-        line = line.strip()
-        if not line: continue
-        
-        # Check if line starts with Q1., Q.1, 1., 2. etc.
-        # Regex: Starts with Q followed by number OR just number followed by dot
-        if re.match(r'^(Q\s*\d+[.)]|Q\.|[0-9]+\.)', line, re.IGNORECASE):
-            # Make the Question part Bold
-            # E.g. "Q1. What is.." -> "<b>Q1. What is..</b>"
-            line = f"<b>{line}</b>"
-        
-        formatted_lines.append(line)
+    current_q_num = start_num
     
-    # Join nicely with breaks
-    return "<br>".join(formatted_lines)
+    for q_block in raw_questions:
+        q_block = q_block.strip()
+        if not q_block: continue
+        
+        lines = q_block.split('\n')
+        first_line = lines[0].strip()
+        
+        # Remove user typed number if exists (e.g. "1. Question" -> "Question")
+        # This prevents "Q6. 1. Question"
+        first_line = re.sub(r'^(Q\d+[.)]|\d+[.)]|Q\.)\s*', '', first_line, flags=re.IGNORECASE)
+        
+        # Format: Bold Question Number + Question Text
+        formatted_question = f"<b>Q{current_q_num}. {first_line}</b>"
+        
+        # Handle Options (Rest of the lines)
+        options_html = ""
+        if len(lines) > 1:
+            options_html = "<br>" + "<br>".join([line.strip() for line in lines[1:]])
+            
+        formatted_html_parts.append(f"{formatted_question}{options_html}")
+        current_q_num += 1
+        
+    return "<br><br>".join(formatted_html_parts)
 
-def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, details_dict):
+def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, details_dict, ai_q_count):
     split_marker = "[[BREAK]]"
     ai_questions, ai_answers = "", ""
     
@@ -67,17 +77,24 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
     else:
         ai_questions = ai_text.replace(chr(10), '<br>')
 
-    # 2. Process Manual Text (WITH SMART FORMATTING)
+    # 2. Process Manual Text (AUTO NUMBERING)
     manual_questions_html = ""
     if manual_text:
-        # Use our new smart function instead of simple replace
-        formatted_manual = smart_format_manual_text(manual_text)
-        manual_questions_html = f"<br><br>{formatted_manual}"
+        # Start number is AI count + 1
+        start_from = ai_q_count + 1
+        formatted_manual = process_manual_text_auto_number(manual_text, start_from)
+        
+        # Add a gap if there were AI questions
+        prefix = "<br><br>" if ai_q_count > 0 else ""
+        manual_questions_html = f"{prefix}{formatted_manual}"
 
     # 3. Process Manual Images
     manual_images_html = ""
     if manual_images:
         manual_images_html = "<br><br>"
+        # Calculate image starting number
+        # Note: Counting text lines is hard, so we just append images. 
+        # Ideally, images are usually labeled "Figure Q".
         for img_file in manual_images:
             img_b64 = get_image_base64(img_file)
             manual_images_html += f"""
@@ -170,9 +187,8 @@ with st.sidebar:
     
     st.markdown("---")
     with st.expander("Manual Questions (Type here)"):
-        # यहाँ इंस्ट्रक्शन डाल दिया ताकि यूजर को पता चले कैसे लिखना है
-        st.caption("Tip: Start questions with 'Q1.', 'Q2.' etc. Type options on new lines like '(A) Option'.")
-        manual_text = st.text_area("Question Box", height=150, placeholder="Q1. What is the color of the sky?\n(A) Red\n(B) Blue\n(C) Green\n(D) Yellow")
+        st.caption("✨ Auto-Numbering Active: Just type question and options. Leave a blank line between questions.")
+        manual_text = st.text_area("Question Box", height=200, placeholder="What is the capital of India?\n(A) Patna\n(B) Delhi\n\nWho is the PM?\n(A) Modi\n(B) Rahul")
         manual_imgs = st.file_uploader("Images", type=['png', 'jpg'], accept_multiple_files=True)
     
     btn = st.button("🚀 Generate Paper")
@@ -199,6 +215,7 @@ if btn:
                 for m in available_models:
                     if 'gemini' in m: chosen_model = m; break
             
+            # If AI questions needed but no model found
             if not chosen_model and num_questions > 0:
                 st.error("❌ No AI Model found.")
                 st.stop()
@@ -206,6 +223,7 @@ if btn:
             model = genai.GenerativeModel(chosen_model) if chosen_model else None
             
             ai_text = ""
+            # Only call API if num_questions > 0
             if num_questions > 0 and model:
                 with st.spinner(f'🤖 Thinking...'):
                     for attempt in range(3):
@@ -227,7 +245,9 @@ if btn:
 
             logo_b64 = get_image_base64(final_logo)
             details = { "Exam Name": exam_name, "Subject": subject, "Topic": topic, "Time": time_limit, "Marks": max_marks }
-            final_html = create_html_paper(ai_text, manual_text, manual_imgs, coaching_name, logo_b64, details)
+            
+            # Pass num_questions to the function so it knows where to start numbering manual ones
+            final_html = create_html_paper(ai_text, manual_text, manual_imgs, coaching_name, logo_b64, details, num_questions)
             
             st.balloons()
             st.success("✅ Paper Ready!")
