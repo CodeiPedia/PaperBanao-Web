@@ -21,6 +21,7 @@ st.markdown("""
     .main-header { font-size: 42px; color: #1E88E5; text-align: center; font-weight: bold; font-family: sans-serif; }
     .stButton>button { background-color: #1E88E5; color: white; font-size: 18px; width: 100%; border-radius: 8px; }
     .diagram-box { border: 2px dashed #1E88E5; padding: 15px; border-radius: 10px; background-color: #f0f8ff; margin-bottom: 20px;}
+    .css-1v0mbdj.etr89bj1 > img { border-radius: 50%; } /* Makes logo round if wanted */
 </style>
 """, unsafe_allow_html=True)
 
@@ -90,7 +91,7 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
 
     final_body = ai_questions + manual_questions_html + manual_images_html
     
-    # --- ANSWER KEY LOGIC (COMPACT) ---
+    # --- ANSWER KEY (COMPACT) ---
     if ai_answers:
         final_body += f"""
         <div class='page-break'></div>
@@ -125,9 +126,9 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
             .page-break {{ page-break-before: always; }}
             .footer {{ position: absolute; bottom: 10px; width: 100%; text-align: center; font-size: 10px; color: #555; }}
             
-            /* --- COMPACT ANSWER KEY STYLE --- */
+            /* Compact Answer Key */
             .answer-key-grid {{
-                column-count: 4; /* Splits text into 4 columns */
+                column-count: 4;
                 column-gap: 20px;
                 font-size: 14px;
                 border: 1px solid #ccc;
@@ -155,7 +156,18 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
     return html_content
 
 # --- 4. UI Setup ---
-st.markdown('<div class="main-header">📄 PaperBanao.ai</div>', unsafe_allow_html=True)
+
+# --- WEBSITE LOGO LOGIC ---
+if os.path.exists("logo.png"):
+    # Create 3 columns to center the logo (Empty | Logo | Empty)
+    col1, mid, col3 = st.columns([1,1,1])
+    with mid:
+        st.image("logo.png", width=150) # You can change width=200 to make it bigger
+    st.markdown('<div style="text-align: center; font-weight: bold; font-size: 20px; color: #555;">AI Exam Paper Generator</div>', unsafe_allow_html=True)
+else:
+    # If no logo found, show text header
+    st.markdown('<div class="main-header">📄 PaperBanao.ai</div>', unsafe_allow_html=True)
+# ---------------------------
 
 with st.sidebar:
     st.header("⚙️ Control Panel")
@@ -185,8 +197,10 @@ with st.sidebar:
 
     st.markdown("---")
     coaching_name = st.text_input("Institute Name:", value="Patna Success Classes")
-    uploaded_logo = st.file_uploader("Upload Logo", type=['png', 'jpg'])
-    final_logo = uploaded_logo if uploaded_logo else ("logo.png" if os.path.exists("logo.png") else None)
+    
+    # --- COACHING LOGO (Different from Website Logo) ---
+    uploaded_logo = st.file_uploader("Upload Institute Logo", type=['png', 'jpg'])
+    final_logo = uploaded_logo # Only use uploaded logo for paper
     
     exam_name = st.text_input("Exam Name:", value="Class 10 Unit Test")
     subject = st.text_input("Subject:", value="Science")
