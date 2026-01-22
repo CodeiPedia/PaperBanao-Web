@@ -93,13 +93,22 @@ st.markdown('<div class="main-header">📄 PaperBanao.ai</div>', unsafe_allow_ht
 with st.sidebar:
     st.header("⚙️ Control Panel")
     
-    # --- SECRET KEY LOGIC ---
-    if "GOOGLE_API_KEY" in st.secrets:
+    # --- HYBRID KEY SYSTEM (PARTNER'S CHOICE) ---
+    st.markdown("### 🔑 API License")
+    # 1. Ask for User Key (Optional)
+    user_key = st.text_input("Enter Your API Key (Optional):", type="password", help="Enter your own Google Gemini Key if you have one. Otherwise, leave blank to use the free shared quota.")
+    
+    # 2. Key Selection Logic
+    if user_key:
+        api_key = user_key
+        st.info("👤 Using: Personal Key")
+    elif "GOOGLE_API_KEY" in st.secrets:
         api_key = st.secrets["GOOGLE_API_KEY"]
-        st.success("✅ Pro License Active")
+        st.success("✅ Using: Free Shared License")
     else:
-        api_key = st.text_input("🔑 Google API Key:", type="password")
-    # ------------------------
+        api_key = None
+        st.error("❌ No License Found. Please enter a Key.")
+    # -------------------------------------------
 
     st.markdown("---")
     coaching_name = st.text_input("Institute Name:", value="Patna Success Classes")
@@ -127,7 +136,7 @@ with st.sidebar:
 
 # --- 5. LOGIC ---
 if btn:
-    if not api_key: st.warning("⚠️ API Key Required")
+    if not api_key: st.warning("⚠️ API Key Required to generate paper.")
     else:
         try:
             genai.configure(api_key=api_key)
@@ -167,7 +176,8 @@ if btn:
                             break 
                         except Exception as e:
                             if "429" in str(e) or "quota" in str(e).lower():
-                                time.sleep(5)
+                                if attempt < 2: time.sleep(5)
+                                else: st.error("❌ Quota full. Try again in 1 min.")
                             else:
                                 st.error(f"Error: {e}")
                                 st.stop()
