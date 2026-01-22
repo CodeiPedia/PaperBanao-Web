@@ -194,4 +194,93 @@ with st.sidebar:
                     if not model_text: model_text = genai.GenerativeModel(m.name)
                     if not model_vision:
                         if 'vision' in m.name or '1.5' in m.name or 'gemini-pro' in m.name:
-                            model_vision = genai.GenerativeModel
+                            model_vision = genai.GenerativeModel(m.name)
+            if not model_vision and model_text: model_vision = model_text
+        except: pass
+
+    st.markdown("---")
+    coaching_name = st.text_input("Institute Name:", value="Patna Success Classes")
+    
+    # --- COACHING LOGO ---
+    uploaded_logo = st.file_uploader("Upload Institute Logo", type=['png', 'jpg'])
+    final_logo = uploaded_logo # Use this for the paper
+    
+    exam_name = st.text_input("Exam Name:", value="Class 10 Unit Test")
+    subject = st.text_input("Subject:", value="Science")
+    topic = st.text_input("Topic:", value="Light")
+    col1, col2 = st.columns(2)
+    with col1: time_limit = st.text_input("Time:", value="45 Mins")
+    with col2: max_marks = st.text_input("Marks:", value="20")
+    
+    st.markdown("---")
+    st.subheader("1️⃣ Text Questions")
+    num_questions = st.slider("Num Questions:", 0, 50, 5)
+    language = st.radio("Language:", ["Hindi", "English", "Bilingual"])
+    
+    st.markdown("---")
+    st.subheader("2️⃣ Diagram Questions")
+    with st.expander("✨ Generate from Diagram", expanded=True):
+        diagram_img_upload = st.file_uploader("Upload Diagram:", type=['png', 'jpg', 'jpeg'], key="dia_up")
+        
+        if diagram_img_upload:
+            st.image(diagram_img_upload, caption="Preview", use_column_width=True)
+            diagram_prompt = st.text_input("Instruction:", key="dia_p")
+            
+            if st.button("Generate Question"):
+                if not model_vision: st.error("❌ Vision Model unavailable.")
+                elif not diagram_prompt: st.warning("⚠️ Enter instruction.")
+                else:
+                    with st.spinner("AI Looking..."):
+                        try:
+                            img_pil = Image.open(diagram_img_upload)
+                            lang_hint = "in HINDI" if "Hindi" in language else "in ENGLISH"
+                            full_prompt = [f"Create 1 MCQ {lang_hint}. Instruction: {diagram_prompt}. Format: Question text, then (A)..", img_pil]
+                            
+                            response = model_vision.generate_content(full_prompt)
+                            sep = "\n\n" if st.session_state.manual_text_content else ""
+                            st.session_state.manual_text_content += sep + response.text.strip()
+                            st.session_state.manual_uploaded_images.append(diagram_img_upload)
+                            st.success("Added!")
+                            st.rerun()
+                        except Exception as e: st.error(f"Error: {e}")
+
+    st.markdown("---")
+    with st.expander("3️⃣ Review / Edit Manual"):
+        manual_text = st.text_area("Editor", value=st.session_state.manual_text_content, height=200)
+        st.session_state.manual_text_content = manual_text
+        if st.button("Clear All"):
+            st.session_state.manual_text_content = ""
+            st.session_state.manual_uploaded_images = []
+            st.rerun()
+
+    btn_final = st.button("🚀 Generate Final Paper", type="primary")
+
+# --- 5. MAIN LOGIC ---
+if btn_final:
+    if not api_key: st.warning("⚠️ Key Required")
+    else:
+        ai_text_final = ""
+        if num_questions > 0 and model_text:
+            with st.spinner('Generating...'):
+                try:
+                    lang_prompt = "HINDI" if "Hindi" in language else "ENGLISH"
+                    prompt = f"Create {num_questions} MCQ for '{topic}' ({subject}). Lang: {lang_prompt}. Format: <b>Q1. ?</b><br>(A)..<br> End with [[BREAK]] then Answer Key."
+                    response = model_text.generate_content(prompt)
+                    ai_text_final = response.text
+                except Exception as e: st.error(f"AI Error: {e}")
+
+        final_manual_text = st.session_state.manual_text_content
+        final_manual_images = st.session_state.manual_uploaded_images
+        logo_b64 = get_image_base64(final_logo)
+        
+        details = {
+            "Exam Name": exam_name,
+            "Subject": subject,
+            "Topic": topic,
+            "Time": time_limit,
+            "Marks": max_marks
+        }
+        
+        final_html = create_html_paper(ai_text_final, final_manual_text, final_manual_images, coaching_name, logo_b64, details, num_questions)
+        st.balloons()
+        st.download_button("📥 Download HTML", final_html, "paper.html", "text/html")
