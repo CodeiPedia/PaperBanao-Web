@@ -3,6 +3,7 @@ import google.generativeai as genai
 import os
 import base64
 import time
+import re  # New Import for Smart Formatting
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(page_title="PaperBanao.ai", page_icon="📄", layout="wide")
@@ -28,6 +29,32 @@ def get_image_base64(image_input):
         return f"data:image/png;base64,{base64_str}"
     except: return None
 
+def smart_format_manual_text(text):
+    """
+    This function magically makes manual text look like pro MCQs.
+    It finds 'Q1.' or '1.' and makes it BOLD.
+    """
+    if not text: return ""
+    
+    formatted_lines = []
+    lines = text.split('\n')
+    
+    for line in lines:
+        line = line.strip()
+        if not line: continue
+        
+        # Check if line starts with Q1., Q.1, 1., 2. etc.
+        # Regex: Starts with Q followed by number OR just number followed by dot
+        if re.match(r'^(Q\s*\d+[.)]|Q\.|[0-9]+\.)', line, re.IGNORECASE):
+            # Make the Question part Bold
+            # E.g. "Q1. What is.." -> "<b>Q1. What is..</b>"
+            line = f"<b>{line}</b>"
+        
+        formatted_lines.append(line)
+    
+    # Join nicely with breaks
+    return "<br>".join(formatted_lines)
+
 def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, details_dict):
     split_marker = "[[BREAK]]"
     ai_questions, ai_answers = "", ""
@@ -40,18 +67,16 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
     else:
         ai_questions = ai_text.replace(chr(10), '<br>')
 
-    # 2. Process Manual Text (SEAMLESSLY MERGED)
-    # हम यहाँ कोई "Part B" या <hr> नहीं लगाएंगे। बस एक <br> देकर जोड़ देंगे।
+    # 2. Process Manual Text (WITH SMART FORMATTING)
     manual_questions_html = ""
     if manual_text:
-        formatted_manual = manual_text.replace(chr(10), '<br>')
-        # AI सवालों के बाद थोड़ा गैप (<br><br>) और फिर मैनुअल सवाल
+        # Use our new smart function instead of simple replace
+        formatted_manual = smart_format_manual_text(manual_text)
         manual_questions_html = f"<br><br>{formatted_manual}"
 
-    # 3. Process Manual Images (CLEAN LOOK)
+    # 3. Process Manual Images
     manual_images_html = ""
     if manual_images:
-        # यहाँ भी हेडिंग हटा दी है ताकि वो पेपर का हिस्सा लगे
         manual_images_html = "<br><br>"
         for img_file in manual_images:
             img_b64 = get_image_base64(img_file)
@@ -62,10 +87,8 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
             </div>
             """
 
-    # 4. Combine Everything
     final_body = ai_questions + manual_questions_html + manual_images_html
 
-    # 5. Answer Key Page
     if ai_answers:
         final_body += f"""
         <div class='page-break'></div>
@@ -116,7 +139,7 @@ with st.sidebar:
     st.header("⚙️ Control Panel")
     
     st.markdown("### 🔑 API License")
-    user_key = st.text_input("Enter Your API Key (Optional):", type="password", help="Enter your own Google Gemini Key to avoid limits.")
+    user_key = st.text_input("Enter Your API Key (Optional):", type="password")
     
     if user_key:
         api_key = user_key
@@ -146,8 +169,10 @@ with st.sidebar:
     language = st.radio("Language:", ["Hindi", "English", "Bilingual"])
     
     st.markdown("---")
-    with st.expander("Manual Questions"):
-        manual_text = st.text_area("Type questions...", height=100)
+    with st.expander("Manual Questions (Type here)"):
+        # यहाँ इंस्ट्रक्शन डाल दिया ताकि यूजर को पता चले कैसे लिखना है
+        st.caption("Tip: Start questions with 'Q1.', 'Q2.' etc. Type options on new lines like '(A) Option'.")
+        manual_text = st.text_area("Question Box", height=150, placeholder="Q1. What is the color of the sky?\n(A) Red\n(B) Blue\n(C) Green\n(D) Yellow")
         manual_imgs = st.file_uploader("Images", type=['png', 'jpg'], accept_multiple_files=True)
     
     btn = st.button("🚀 Generate Paper")
@@ -192,4 +217,21 @@ if btn:
                             response = model.generate_content(prompt)
                             ai_text = response.text
                             break 
-                        except Exception as
+                        except Exception as e:
+                            if "429" in str(e) or "quota" in str(e).lower():
+                                if attempt < 2: time.sleep(5)
+                                else: st.error("❌ Quota full.")
+                            else:
+                                st.error(f"Error: {e}")
+                                st.stop()
+
+            logo_b64 = get_image_base64(final_logo)
+            details = { "Exam Name": exam_name, "Subject": subject, "Topic": topic, "Time": time_limit, "Marks": max_marks }
+            final_html = create_html_paper(ai_text, manual_text, manual_imgs, coaching_name, logo_b64, details)
+            
+            st.balloons()
+            st.success("✅ Paper Ready!")
+            st.download_button("📥 Download HTML", final_html, f"{subject}_{topic}.html", "text/html")
+
+        except Exception as e:
+            st.error(f"System Error: {e}")
