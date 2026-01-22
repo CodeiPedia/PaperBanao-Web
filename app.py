@@ -144,36 +144,22 @@ with st.sidebar:
     elif "GOOGLE_API_KEY" in st.secrets: api_key = st.secrets["GOOGLE_API_KEY"]
     else: api_key = None
 
-    # --- UNIVERSAL MODEL SELECTOR (NO NAME FILTER) ---
+    # --- UNIVERSAL MODEL SELECTOR ---
     model_vision = None
     model_text = None
     
     if api_key:
         try:
             genai.configure(api_key=api_key)
-            
-            # Get ANY available model
             all_models = genai.list_models()
-            
             for m in all_models:
-                # 1. Grab the first model that supports generating content
                 if 'generateContent' in m.supported_generation_methods:
-                    if not model_text:
-                        model_text = genai.GenerativeModel(m.name)
-                        # st.sidebar.success(f"Connected: {m.name}") # Uncomment to see name
-                    
-                    # 2. Grab the first model that is 'gemini' and likely supports vision (1.5 or vision)
+                    if not model_text: model_text = genai.GenerativeModel(m.name)
                     if not model_vision:
                         if 'vision' in m.name or '1.5' in m.name or 'gemini-pro' in m.name:
                             model_vision = genai.GenerativeModel(m.name)
-                
-            if not model_text: st.error("❌ No AI Model found. Check API Key.")
-            
-            # Fallback: If no specific vision model found, use the text model (Gemini 1.5 is both)
-            if not model_vision and model_text:
-                model_vision = model_text
-
-        except Exception as e: st.error(f"API Error: {e}")
+            if not model_vision and model_text: model_vision = model_text
+        except: pass
 
     st.markdown("---")
     coaching_name = st.text_input("Institute Name:", value="Patna Success Classes")
@@ -201,4 +187,13 @@ with st.sidebar:
             st.image(diagram_img_upload, caption="Preview", use_column_width=True)
             diagram_prompt = st.text_input("Instruction:", key="dia_p")
             
-            if st.button("Generate Question
+            # --- FIXED BUTTON LINE ---
+            if st.button("Generate Question"):
+                if not model_vision: st.error("❌ Vision Model unavailable.")
+                elif not diagram_prompt: st.warning("⚠️ Enter instruction.")
+                else:
+                    with st.spinner("AI Looking..."):
+                        try:
+                            img_pil = Image.open(diagram_img_upload)
+                            lang_hint = "in HINDI" if "Hindi" in language else "in ENGLISH"
+                            full_prompt = [f"Create 1 MCQ {lang_hint}. Instruction
