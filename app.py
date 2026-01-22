@@ -11,9 +11,7 @@ st.set_page_config(page_title="PaperBanao.ai", page_icon="📄", layout="wide")
 st.markdown("""
 <style>
     .main-header { font-size: 42px; color: #1E88E5; text-align: center; font-weight: bold; font-family: sans-serif; }
-    .sub-header { font-size: 18px; color: #555; text-align: center; margin-bottom: 20px; }
     .stButton>button { background-color: #1E88E5; color: white; font-size: 18px; width: 100%; border-radius: 8px; }
-    .manual-box { border: 1px dashed #ccc; padding: 15px; border-radius: 10px; background-color: #f9f9f9; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -58,7 +56,6 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
 
     logo_html = f'<img src="{logo_data}" class="logo">' if logo_data else ''
     
-    # CSS defined safely
     css_style = """
         body { font-family: 'Roboto', sans-serif; padding: 40px; max-width: 900px; margin: auto; line-height: 1.5; }
         .main-container { border: 2px solid #000; padding: 30px; min-height: 950px; position: relative; }
@@ -95,13 +92,20 @@ st.markdown('<div class="main-header">📄 PaperBanao.ai</div>', unsafe_allow_ht
 
 with st.sidebar:
     st.header("⚙️ Control Panel")
-    api_key = st.text_input("🔑 Google API Key:", type="password")
+    
+    # --- SECRET KEY LOGIC ---
+    if "GOOGLE_API_KEY" in st.secrets:
+        api_key = st.secrets["GOOGLE_API_KEY"]
+        st.success("✅ Pro License Active")
+    else:
+        api_key = st.text_input("🔑 Google API Key:", type="password")
+    # ------------------------
+
     st.markdown("---")
     coaching_name = st.text_input("Institute Name:", value="Patna Success Classes")
     
     uploaded_logo = st.file_uploader("Upload Logo", type=['png', 'jpg'])
     final_logo = uploaded_logo if uploaded_logo else ("logo.png" if os.path.exists("logo.png") else None)
-    if final_logo == "logo.png": st.success("✅ Default Logo Loaded")
 
     exam_name = st.text_input("Exam Name:", value="Class 10 Unit Test")
     subject = st.text_input("Subject:", value="Science")
@@ -121,59 +125,37 @@ with st.sidebar:
     
     btn = st.button("🚀 Generate Paper")
 
-# --- 5. LOGIC WITH AUTO-MODEL-SELECTOR ---
+# --- 5. LOGIC ---
 if btn:
     if not api_key: st.warning("⚠️ API Key Required")
     else:
         try:
             genai.configure(api_key=api_key)
             
-            # --- SUPER SMART MODEL SELECTOR ---
-            # यह कोड पहले लिस्ट देखेगा, फिर जो मिलेगा उसे यूज़ करेगा
+            # Smart Model Selector
             available_models = []
             try:
                 for m in genai.list_models():
                     if 'generateContent' in m.supported_generation_methods:
                         available_models.append(m.name)
-            except Exception as e:
-                st.error(f"API Error: {e}")
-                st.stop()
-            
-            # Priority Search: 1.5-flash -> gemini-pro -> any gemini
+            except: pass
+
             chosen_model = None
-            
-            # Check 1: Try finding 'gemini-1.5-flash' exactly
             for m in available_models:
-                if 'gemini-1.5-flash' in m:
-                    chosen_model = m
-                    break
-            
-            # Check 2: If not found, look for 'gemini-pro'
+                if 'gemini-1.5-flash' in m: chosen_model = m; break
             if not chosen_model:
                 for m in available_models:
-                    if 'gemini-pro' in m:
-                        chosen_model = m
-                        break
+                    if 'gemini' in m: chosen_model = m; break
             
-            # Check 3: If still not found, take ANY gemini model
-            if not chosen_model:
-                for m in available_models:
-                    if 'gemini' in m:
-                        chosen_model = m
-                        break
-            
-            if not chosen_model:
-                st.error("❌ No Gemini models found enabled for your API Key.")
-                st.write("Available models were:", available_models)
+            if not chosen_model and num_questions > 0:
+                st.error("❌ No AI Model found. Check API Key.")
                 st.stop()
                 
-            # st.info(f"✅ Connected to: {chosen_model}") # (Optional: Debugging के लिए)
-            model = genai.GenerativeModel(chosen_model)
+            model = genai.GenerativeModel(chosen_model) if chosen_model else None
             
             ai_text = ""
-            if num_questions > 0:
-                with st.spinner(f'🤖 AI thinking using {chosen_model.split("/")[-1]}...'):
-                    # Retry Loop for 429 Errors
+            if num_questions > 0 and model:
+                with st.spinner(f'🤖 Thinking...'):
                     for attempt in range(3):
                         try:
                             lang_prompt = "HINDI (Devanagari)" if "Hindi" in language else "ENGLISH"
@@ -185,12 +167,7 @@ if btn:
                             break 
                         except Exception as e:
                             if "429" in str(e) or "quota" in str(e).lower():
-                                if attempt < 2:
-                                    st.warning(f"⏳ Traffic high. Retrying in 5s... ({attempt+1}/3)")
-                                    time.sleep(5)
-                                else:
-                                    st.error("❌ Quota finished. Try later.")
-                                    st.stop()
+                                time.sleep(5)
                             else:
                                 st.error(f"Error: {e}")
                                 st.stop()
