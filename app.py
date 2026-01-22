@@ -196,4 +196,5 @@ with st.sidebar:
                         try:
                             img_pil = Image.open(diagram_img_upload)
                             lang_hint = "in HINDI" if "Hindi" in language else "in ENGLISH"
-                            full_prompt = [f"Create 1 MCQ {lang_hint}. Instruction
+                            full_prompt = [f"Create 1 MCQ {lang_hint}. Instruction: {diagram_prompt}. Format: Question text, then (A)..", img_pil]
+
