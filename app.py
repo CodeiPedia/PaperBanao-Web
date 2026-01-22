@@ -64,7 +64,7 @@ def process_manual_text_auto_number(text, start_num):
 
 def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, details_dict, ai_q_count):
     split_marker = "[[BREAK]]"
-    ai_questions, ai_answers = ""
+    ai_questions, ai_answers = "", ""
     if split_marker in ai_text:
         parts = ai_text.split(split_marker)
         ai_questions = parts[0].replace(chr(10), '<br>')
@@ -89,8 +89,19 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
             manual_images_html += f"<div class='question-box' style='margin-top: 20px;'><p><strong>Refer to figure:</strong></p><img src='{img_b64}' style='max-width: 100%; max-height: 400px; border: 1px solid #ccc; padding: 5px;'></div>"
 
     final_body = ai_questions + manual_questions_html + manual_images_html
+    
+    # --- ANSWER KEY LOGIC (COMPACT) ---
     if ai_answers:
-        final_body += f"<div class='page-break'></div><div class='header'><h2>Answer Key</h2><p>{details_dict['Subject']}</p></div><div class='content'>{ai_answers}</div>"
+        final_body += f"""
+        <div class='page-break'></div>
+        <div class='header'>
+            <h2>Answer Key</h2>
+            <p>{details_dict['Subject']} - {details_dict['Topic']}</p>
+        </div>
+        <div class='answer-key-grid'>
+            {ai_answers}
+        </div>
+        """
 
     logo_html = f'<img src="{logo_data}" class="logo">' if logo_data else ''
     
@@ -113,6 +124,17 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
             .question-box {{ margin-bottom: 15px; font-size: 16px; }}
             .page-break {{ page-break-before: always; }}
             .footer {{ position: absolute; bottom: 10px; width: 100%; text-align: center; font-size: 10px; color: #555; }}
+            
+            /* --- COMPACT ANSWER KEY STYLE --- */
+            .answer-key-grid {{
+                column-count: 4; /* Splits text into 4 columns */
+                column-gap: 20px;
+                font-size: 14px;
+                border: 1px solid #ccc;
+                padding: 15px;
+                background-color: #f9f9f9;
+                text-align: left;
+            }}
         </style>
     </head>
     <body>
@@ -187,7 +209,6 @@ with st.sidebar:
             st.image(diagram_img_upload, caption="Preview", use_column_width=True)
             diagram_prompt = st.text_input("Instruction:", key="dia_p")
             
-            # --- FIXED BUTTON LINE ---
             if st.button("Generate Question"):
                 if not model_vision: st.error("❌ Vision Model unavailable.")
                 elif not diagram_prompt: st.warning("⚠️ Enter instruction.")
