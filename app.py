@@ -94,7 +94,6 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
 
     logo_html = f'<img src="{logo_data}" class="logo">' if logo_data else ''
     
-    # HTML STRUCTURE (Broken down for safety)
     html_content = f"""
     <!DOCTYPE html>
     <html>
@@ -145,31 +144,34 @@ with st.sidebar:
     elif "GOOGLE_API_KEY" in st.secrets: api_key = st.secrets["GOOGLE_API_KEY"]
     else: api_key = None
 
-    # --- ROBUST MODEL SELECTOR ---
+    # --- UNIVERSAL MODEL SELECTOR (NO NAME FILTER) ---
     model_vision = None
     model_text = None
     
     if api_key:
         try:
             genai.configure(api_key=api_key)
-            all_models = [m.name for m in genai.list_models()]
             
-            # 1. FIND TEXT MODEL
-            text_candidates = ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]
-            for m in text_candidates:
-                if m in all_models:
-                    model_text = genai.GenerativeModel(m)
-                    break
+            # Get ANY available model
+            all_models = genai.list_models()
             
-            # 2. FIND VISION MODEL
-            vision_candidates = ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro-vision"]
-            for m in vision_candidates:
-                if m in all_models:
-                    model_vision = genai.GenerativeModel(m)
-                    break
+            for m in all_models:
+                # 1. Grab the first model that supports generating content
+                if 'generateContent' in m.supported_generation_methods:
+                    if not model_text:
+                        model_text = genai.GenerativeModel(m.name)
+                        # st.sidebar.success(f"Connected: {m.name}") # Uncomment to see name
+                    
+                    # 2. Grab the first model that is 'gemini' and likely supports vision (1.5 or vision)
+                    if not model_vision:
+                        if 'vision' in m.name or '1.5' in m.name or 'gemini-pro' in m.name:
+                            model_vision = genai.GenerativeModel(m.name)
+                
+            if not model_text: st.error("❌ No AI Model found. Check API Key.")
             
-            if not model_text: st.error("❌ No Text AI Model found.")
-            if not model_vision: st.warning("⚠️ No Vision AI Model found.")
+            # Fallback: If no specific vision model found, use the text model (Gemini 1.5 is both)
+            if not model_vision and model_text:
+                model_vision = model_text
 
         except Exception as e: st.error(f"API Error: {e}")
 
@@ -199,62 +201,4 @@ with st.sidebar:
             st.image(diagram_img_upload, caption="Preview", use_column_width=True)
             diagram_prompt = st.text_input("Instruction:", key="dia_p")
             
-            if st.button("Generate Question"):
-                if not model_vision: st.error("❌ Vision Model unavailable.")
-                elif not diagram_prompt: st.warning("⚠️ Enter instruction.")
-                else:
-                    with st.spinner("AI Looking..."):
-                        try:
-                            img_pil = Image.open(diagram_img_upload)
-                            lang_hint = "in HINDI" if "Hindi" in language else "in ENGLISH"
-                            full_prompt = [f"Create 1 MCQ {lang_hint}. Instruction: {diagram_prompt}. Format: Question text, then (A)..", img_pil]
-                            
-                            response = model_vision.generate_content(full_prompt)
-                            sep = "\n\n" if st.session_state.manual_text_content else ""
-                            st.session_state.manual_text_content += sep + response.text.strip()
-                            st.session_state.manual_uploaded_images.append(diagram_img_upload)
-                            st.success("Added!")
-                            st.rerun()
-                        except Exception as e: st.error(f"Error: {e}")
-
-    st.markdown("---")
-    with st.expander("3️⃣ Review / Edit Manual"):
-        manual_text = st.text_area("Editor", value=st.session_state.manual_text_content, height=200)
-        st.session_state.manual_text_content = manual_text
-        if st.button("Clear All"):
-            st.session_state.manual_text_content = ""
-            st.session_state.manual_uploaded_images = []
-            st.rerun()
-
-    btn_final = st.button("🚀 Generate Final Paper", type="primary")
-
-# --- 5. MAIN LOGIC ---
-if btn_final:
-    if not api_key: st.warning("⚠️ Key Required")
-    else:
-        ai_text_final = ""
-        if num_questions > 0 and model_text:
-            with st.spinner('Generating...'):
-                try:
-                    lang_prompt = "HINDI" if "Hindi" in language else "ENGLISH"
-                    prompt = f"Create {num_questions} MCQ for '{topic}' ({subject}). Lang: {lang_prompt}. Format: <b>Q1. ?</b><br>(A)..<br> End with [[BREAK]] then Answer Key."
-                    response = model_text.generate_content(prompt)
-                    ai_text_final = response.text
-                except Exception as e: st.error(f"AI Error: {e}")
-
-        final_manual_text = st.session_state.manual_text_content
-        final_manual_images = st.session_state.manual_uploaded_images
-        logo_b64 = get_image_base64(final_logo)
-        
-        # FIXED: Dictionary written clearly to avoid copy-paste errors
-        details = {
-            "Exam Name": exam_name,
-            "Subject": subject,
-            "Topic": topic,
-            "Time": time_limit,
-            "Marks": max_marks
-        }
-        
-        final_html = create_html_paper(ai_text_final, final_manual_text, final_manual_images, coaching_name, logo_b64, details, num_questions)
-        st.balloons()
-        st.download_button("📥 Download HTML", final_html, "paper.html", "text/html")
+            if st.button("Generate Question
