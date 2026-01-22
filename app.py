@@ -64,11 +64,11 @@ def process_manual_text_auto_number(text, start_num):
 
 def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, details_dict, ai_q_count):
     split_marker = "[[BREAK]]"
-    ai_questions, ai_answers = "", ""
+    ai_questions, ai_answers = ""
     if split_marker in ai_text:
         parts = ai_text.split(split_marker)
         ai_questions = parts[0].replace(chr(10), '<br>')
-        ai_answers = parts[1].replace(chr(10), '<br>')
+        if len(parts) > 1: ai_answers = parts[1].replace(chr(10), '<br>')
     else:
         ai_questions = ai_text.replace(chr(10), '<br>')
 
@@ -197,4 +197,52 @@ with st.sidebar:
                             img_pil = Image.open(diagram_img_upload)
                             lang_hint = "in HINDI" if "Hindi" in language else "in ENGLISH"
                             full_prompt = [f"Create 1 MCQ {lang_hint}. Instruction: {diagram_prompt}. Format: Question text, then (A)..", img_pil]
+                            
+                            response = model_vision.generate_content(full_prompt)
+                            sep = "\n\n" if st.session_state.manual_text_content else ""
+                            st.session_state.manual_text_content += sep + response.text.strip()
+                            st.session_state.manual_uploaded_images.append(diagram_img_upload)
+                            st.success("Added!")
+                            st.rerun()
+                        except Exception as e: st.error(f"Error: {e}")
 
+    st.markdown("---")
+    with st.expander("3️⃣ Review / Edit Manual"):
+        manual_text = st.text_area("Editor", value=st.session_state.manual_text_content, height=200)
+        st.session_state.manual_text_content = manual_text
+        if st.button("Clear All"):
+            st.session_state.manual_text_content = ""
+            st.session_state.manual_uploaded_images = []
+            st.rerun()
+
+    btn_final = st.button("🚀 Generate Final Paper", type="primary")
+
+# --- 5. MAIN LOGIC ---
+if btn_final:
+    if not api_key: st.warning("⚠️ Key Required")
+    else:
+        ai_text_final = ""
+        if num_questions > 0 and model_text:
+            with st.spinner('Generating...'):
+                try:
+                    lang_prompt = "HINDI" if "Hindi" in language else "ENGLISH"
+                    prompt = f"Create {num_questions} MCQ for '{topic}' ({subject}). Lang: {lang_prompt}. Format: <b>Q1. ?</b><br>(A)..<br> End with [[BREAK]] then Answer Key."
+                    response = model_text.generate_content(prompt)
+                    ai_text_final = response.text
+                except Exception as e: st.error(f"AI Error: {e}")
+
+        final_manual_text = st.session_state.manual_text_content
+        final_manual_images = st.session_state.manual_uploaded_images
+        logo_b64 = get_image_base64(final_logo)
+        
+        details = {
+            "Exam Name": exam_name,
+            "Subject": subject,
+            "Topic": topic,
+            "Time": time_limit,
+            "Marks": max_marks
+        }
+        
+        final_html = create_html_paper(ai_text_final, final_manual_text, final_manual_images, coaching_name, logo_b64, details, num_questions)
+        st.balloons()
+        st.download_button("📥 Download HTML", final_html, "paper.html", "text/html")
