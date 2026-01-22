@@ -31,6 +31,8 @@ def get_image_base64(image_input):
 def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, details_dict):
     split_marker = "[[BREAK]]"
     ai_questions, ai_answers = "", ""
+    
+    # 1. Process AI Text
     if split_marker in ai_text:
         parts = ai_text.split(split_marker)
         ai_questions = parts[0].replace(chr(10), '<br>')
@@ -38,21 +40,41 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
     else:
         ai_questions = ai_text.replace(chr(10), '<br>')
 
+    # 2. Process Manual Text (SEAMLESSLY MERGED)
+    # हम यहाँ कोई "Part B" या <hr> नहीं लगाएंगे। बस एक <br> देकर जोड़ देंगे।
     manual_questions_html = ""
     if manual_text:
-        manual_questions_html = f"<div class='manual-section'><hr><h3>🔹 Part B: Manual Questions</h3>{manual_text.replace(chr(10), '<br>')}</div>"
+        formatted_manual = manual_text.replace(chr(10), '<br>')
+        # AI सवालों के बाद थोड़ा गैप (<br><br>) और फिर मैनुअल सवाल
+        manual_questions_html = f"<br><br>{formatted_manual}"
 
+    # 3. Process Manual Images (CLEAN LOOK)
     manual_images_html = ""
     if manual_images:
-        manual_images_html = "<div class='image-section'><hr><h3>🔹 Part C: Picture Questions</h3>"
+        # यहाँ भी हेडिंग हटा दी है ताकि वो पेपर का हिस्सा लगे
+        manual_images_html = "<br><br>"
         for img_file in manual_images:
             img_b64 = get_image_base64(img_file)
-            manual_images_html += f"<div class='question-box'><p><strong>Question Image:</strong></p><img src='{img_b64}' style='max-width: 100%; border: 1px solid #ccc; padding: 5px;'></div>"
-        manual_images_html += "</div>"
+            manual_images_html += f"""
+            <div class='question-box' style='margin-top: 20px;'>
+                <p><strong>Question Figure:</strong></p>
+                <img src='{img_b64}' style='max-width: 100%; border: 1px solid #ccc; padding: 5px; border-radius: 5px;'>
+            </div>
+            """
 
+    # 4. Combine Everything
     final_body = ai_questions + manual_questions_html + manual_images_html
+
+    # 5. Answer Key Page
     if ai_answers:
-        final_body += f"<div class='page-break'></div><div class='header'><h2>Answer Key</h2><p>{details_dict['Subject']}</p></div><div class='content'>{ai_answers}</div>"
+        final_body += f"""
+        <div class='page-break'></div>
+        <div class='header'>
+            <h2>Answer Key</h2>
+            <p>{details_dict['Subject']} - {details_dict['Topic']}</p>
+        </div>
+        <div class='content'>{ai_answers}</div>
+        """
 
     logo_html = f'<img src="{logo_data}" class="logo">' if logo_data else ''
     
@@ -93,12 +115,9 @@ st.markdown('<div class="main-header">📄 PaperBanao.ai</div>', unsafe_allow_ht
 with st.sidebar:
     st.header("⚙️ Control Panel")
     
-    # --- HYBRID KEY SYSTEM (PARTNER'S CHOICE) ---
     st.markdown("### 🔑 API License")
-    # 1. Ask for User Key (Optional)
-    user_key = st.text_input("Enter Your API Key (Optional):", type="password", help="Enter your own Google Gemini Key if you have one. Otherwise, leave blank to use the free shared quota.")
+    user_key = st.text_input("Enter Your API Key (Optional):", type="password", help="Enter your own Google Gemini Key to avoid limits.")
     
-    # 2. Key Selection Logic
     if user_key:
         api_key = user_key
         st.info("👤 Using: Personal Key")
@@ -107,8 +126,7 @@ with st.sidebar:
         st.success("✅ Using: Free Shared License")
     else:
         api_key = None
-        st.error("❌ No License Found. Please enter a Key.")
-    # -------------------------------------------
+        st.error("❌ No License Found.")
 
     st.markdown("---")
     coaching_name = st.text_input("Institute Name:", value="Patna Success Classes")
@@ -136,7 +154,7 @@ with st.sidebar:
 
 # --- 5. LOGIC ---
 if btn:
-    if not api_key: st.warning("⚠️ API Key Required to generate paper.")
+    if not api_key: st.warning("⚠️ API Key Required.")
     else:
         try:
             genai.configure(api_key=api_key)
@@ -157,7 +175,7 @@ if btn:
                     if 'gemini' in m: chosen_model = m; break
             
             if not chosen_model and num_questions > 0:
-                st.error("❌ No AI Model found. Check API Key.")
+                st.error("❌ No AI Model found.")
                 st.stop()
                 
             model = genai.GenerativeModel(chosen_model) if chosen_model else None
@@ -174,21 +192,4 @@ if btn:
                             response = model.generate_content(prompt)
                             ai_text = response.text
                             break 
-                        except Exception as e:
-                            if "429" in str(e) or "quota" in str(e).lower():
-                                if attempt < 2: time.sleep(5)
-                                else: st.error("❌ Quota full. Try again in 1 min.")
-                            else:
-                                st.error(f"Error: {e}")
-                                st.stop()
-
-            logo_b64 = get_image_base64(final_logo)
-            details = { "Exam Name": exam_name, "Subject": subject, "Topic": topic, "Time": time_limit, "Marks": max_marks }
-            final_html = create_html_paper(ai_text, manual_text, manual_imgs, coaching_name, logo_b64, details)
-            
-            st.balloons()
-            st.success("✅ Paper Ready!")
-            st.download_button("📥 Download HTML", final_html, f"{subject}_{topic}.html", "text/html")
-
-        except Exception as e:
-            st.error(f"System Error: {e}")
+                        except Exception as
