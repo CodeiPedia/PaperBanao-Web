@@ -166,25 +166,26 @@ if os.path.exists("logo.png"):
     """, unsafe_allow_html=True)
 else:
     st.markdown('<div class="main-header" style="text-align: center; color: #1E88E5;"><h1>📄 PaperBanao.ai</h1></div>', unsafe_allow_html=True)
-# --------------------
+
+# Initialize API Key Variable
+api_key = None
 
 with st.sidebar:
     st.header("⚙️ Control Panel")
     
     # --- HYBRID API KEY LOGIC ---
     st.markdown("### 🔑 API License")
-    user_key = st.text_input("Enter Your API Key (Optional):", type="password", help="Enter your own Gemini Key to avoid limits. If empty, shared key is used.")
+    user_key = st.text_input("Enter Your API Key (Optional):", type="password", help="Enter your own Gemini Key to avoid limits.")
     
     if user_key:
         api_key = user_key
         st.success("✅ Using: Personal Key")
     elif "GOOGLE_API_KEY" in st.secrets:
         api_key = st.secrets["GOOGLE_API_KEY"]
-        st.warning("⚠️ Using: Shared Free Key\n(May show Error 429 if busy)")
+        st.warning("⚠️ Using: Shared Free Key (May hit limits)")
     else:
         api_key = None
-        st.error("❌ No License Found.")
-    # ----------------------------
+        st.error("❌ Key Missing: Add 'GOOGLE_API_KEY' in Secrets.")
 
     # --- UNIVERSAL MODEL SELECTOR ---
     model_vision = None
@@ -218,6 +219,24 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("1️⃣ Text Questions")
     num_questions = st.slider("Num Questions:", 0, 50, 5)
+    
+    # --- DIFFICULTY LEVELS (NEW!) ---
+    st.markdown("**Difficulty Level:**")
+    c1, c2, c3 = st.columns(3)
+    diff_easy = c1.checkbox("Easy", value=True)
+    diff_medium = c2.checkbox("Medium", value=True)
+    diff_hard = c3.checkbox("Hard")
+    
+    # Logic to build the difficulty string
+    selected_levels = []
+    if diff_easy: selected_levels.append("Easy")
+    if diff_medium: selected_levels.append("Medium")
+    if diff_hard: selected_levels.append("Hard")
+    # If nothing selected, default to Medium
+    if not selected_levels: selected_levels = ["Medium"]
+    difficulty_str = ", ".join(selected_levels)
+    # --------------------------------
+    
     language = st.radio("Language:", ["Hindi", "English", "Bilingual"])
     
     st.markdown("---")
@@ -230,7 +249,8 @@ with st.sidebar:
             diagram_prompt = st.text_input("Instruction:", key="dia_p")
             
             if st.button("Generate Question"):
-                if not model_vision: st.error("❌ Vision Model unavailable.")
+                if not api_key: st.error("❌ API Key Required")
+                elif not model_vision: st.error("❌ Vision Model unavailable.")
                 elif not diagram_prompt: st.warning("⚠️ Enter instruction.")
                 else:
                     with st.spinner("AI Looking..."):
@@ -260,17 +280,38 @@ with st.sidebar:
 
 # --- 5. MAIN LOGIC ---
 if btn_final:
-    if not api_key: st.warning("⚠️ Key Required")
+    if not api_key:
+        st.error("⚠️ API Key Missing. Please enter a key in the sidebar or check Secrets.")
     else:
         ai_text_final = ""
-        if num_questions > 0 and model_text:
-            with st.spinner('Generating...'):
-                try:
-                    lang_prompt = "HINDI" if "Hindi" in language else "ENGLISH"
-                    prompt = f"Create {num_questions} MCQ for '{topic}' ({subject}). Lang: {lang_prompt}. Format: <b>Q1. ?</b><br>(A)..<br> End with [[BREAK]] then Answer Key."
-                    response = model_text.generate_content(prompt)
-                    ai_text_final = response.text
-                except Exception as e: st.error(f"AI Error: {e}")
+        # Only try to generate AI text if questions are requested (>0)
+        if num_questions > 0:
+            if model_text:
+                with st.spinner('Generating...'):
+                    try:
+                        lang_prompt = "HINDI" if "Hindi" in language else "ENGLISH"
+                        
+                        # --- MODIFIED PROMPT WITH DIFFICULTY ---
+                        prompt = f"""
+                        Create {num_questions} Multiple Choice Questions (MCQs) for the topic '{topic}' ({subject}).
+                        Language: {lang_prompt}.
+                        Difficulty Level: A mix of {difficulty_str}.
+                        Format: 
+                        <b>Q1. Question Text Here?</b><br>
+                        (A) Option A<br>
+                        (B) Option B<br>
+                        (C) Option C<br>
+                        (D) Option D<br>
+                        
+                        At the very end, add [[BREAK]] followed by the Answer Key.
+                        """
+                        # ---------------------------------------
+                        
+                        response = model_text.generate_content(prompt)
+                        ai_text_final = response.text
+                    except Exception as e: st.error(f"AI Error: {e}")
+            else:
+                st.error("❌ AI Model not connected.")
 
         final_manual_text = st.session_state.manual_text_content
         final_manual_images = st.session_state.manual_uploaded_images
