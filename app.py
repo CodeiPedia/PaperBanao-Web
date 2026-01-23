@@ -89,7 +89,6 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
 
     final_body = ai_questions + manual_questions_html + manual_images_html
     
-    # --- ANSWER KEY (COMPACT) ---
     if ai_answers:
         final_body += f"""
         <div class='page-break'></div>
@@ -123,8 +122,6 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
             .question-box {{ margin-bottom: 15px; font-size: 16px; }}
             .page-break {{ page-break-before: always; }}
             .footer {{ position: absolute; bottom: 10px; width: 100%; text-align: center; font-size: 10px; color: #555; }}
-            
-            /* Compact Answer Key */
             .answer-key-grid {{
                 column-count: 4;
                 column-gap: 20px;
@@ -155,10 +152,9 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
 
 # --- 4. UI Setup ---
 
-# --- HEADER LOGIC (SIDE-BY-SIDE LOGO & TEXT) ---
+# --- HEADER LOGIC ---
 if os.path.exists("logo.png"):
     logo_b64 = get_image_base64("logo.png")
-    # This HTML flexbox puts Logo LEFT and Text RIGHT perfectly
     st.markdown(f"""
     <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
         <img src="{logo_b64}" style="width: 80px; height: 80px; margin-right: 20px; border-radius: 12px;">
@@ -170,16 +166,25 @@ if os.path.exists("logo.png"):
     """, unsafe_allow_html=True)
 else:
     st.markdown('<div class="main-header" style="text-align: center; color: #1E88E5;"><h1>📄 PaperBanao.ai</h1></div>', unsafe_allow_html=True)
-# -----------------------------------------------
+# --------------------
 
 with st.sidebar:
     st.header("⚙️ Control Panel")
     
-    # API KEY
-    user_key = st.text_input("Enter API Key (Optional):", type="password")
-    if user_key: api_key = user_key
-    elif "GOOGLE_API_KEY" in st.secrets: api_key = st.secrets["GOOGLE_API_KEY"]
-    else: api_key = None
+    # --- HYBRID API KEY LOGIC ---
+    st.markdown("### 🔑 API License")
+    user_key = st.text_input("Enter Your API Key (Optional):", type="password", help="Enter your own Gemini Key to avoid limits. If empty, shared key is used.")
+    
+    if user_key:
+        api_key = user_key
+        st.success("✅ Using: Personal Key")
+    elif "GOOGLE_API_KEY" in st.secrets:
+        api_key = st.secrets["GOOGLE_API_KEY"]
+        st.warning("⚠️ Using: Shared Free Key\n(May show Error 429 if busy)")
+    else:
+        api_key = None
+        st.error("❌ No License Found.")
+    # ----------------------------
 
     # --- UNIVERSAL MODEL SELECTOR ---
     model_vision = None
@@ -200,10 +205,8 @@ with st.sidebar:
 
     st.markdown("---")
     coaching_name = st.text_input("Institute Name:", value="Patna Success Classes")
-    
-    # --- COACHING LOGO ---
     uploaded_logo = st.file_uploader("Upload Institute Logo", type=['png', 'jpg'])
-    final_logo = uploaded_logo # Use this for the paper
+    final_logo = uploaded_logo 
     
     exam_name = st.text_input("Exam Name:", value="Class 10 Unit Test")
     subject = st.text_input("Subject:", value="Science")
