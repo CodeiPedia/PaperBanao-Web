@@ -5,12 +5,16 @@ import base64
 import time
 import re
 from PIL import Image
+from datetime import datetime
 
 # --- 0. SESSION STATE SETUP ---
 if 'manual_text_content' not in st.session_state:
     st.session_state.manual_text_content = ""
 if 'manual_uploaded_images' not in st.session_state:
     st.session_state.manual_uploaded_images = []
+# --- NEW: HISTORY STORAGE ---
+if 'paper_history' not in st.session_state:
+    st.session_state.paper_history = []
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(page_title="PaperBanao.ai", page_icon="📄", layout="wide")
@@ -20,6 +24,7 @@ st.markdown("""
 <style>
     .stButton>button { background-color: #1E88E5; color: white; font-size: 18px; width: 100%; border-radius: 8px; }
     .diagram-box { border: 2px dashed #1E88E5; padding: 15px; border-radius: 10px; background-color: #f0f8ff; margin-bottom: 20px;}
+    .history-box { padding: 10px; border-bottom: 1px solid #ddd; margin-bottom: 5px; font-size: 14px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -167,30 +172,28 @@ if os.path.exists("logo.png"):
 else:
     st.markdown('<div class="main-header" style="text-align: center; color: #1E88E5;"><h1>📄 PaperBanao.ai</h1></div>', unsafe_allow_html=True)
 
-# Initialize API Key Variable
+# Initialize API Key
 api_key = None
 
 with st.sidebar:
     st.header("⚙️ Control Panel")
     
-    # --- HYBRID API KEY LOGIC ---
     st.markdown("### 🔑 API License")
-    user_key = st.text_input("Enter Your API Key (Optional):", type="password", help="Enter your own Gemini Key to avoid limits.")
+    user_key = st.text_input("Enter Your API Key (Optional):", type="password", help="Enter your own Gemini Key.")
     
     if user_key:
         api_key = user_key
         st.success("✅ Using: Personal Key")
     elif "GOOGLE_API_KEY" in st.secrets:
         api_key = st.secrets["GOOGLE_API_KEY"]
-        st.warning("⚠️ Using: Shared Free Key (May hit limits)")
+        st.warning("⚠️ Using: Shared Free Key")
     else:
         api_key = None
         st.error("❌ Key Missing: Add 'GOOGLE_API_KEY' in Secrets.")
 
-    # --- UNIVERSAL MODEL SELECTOR ---
+    # --- MODEL SETUP ---
     model_vision = None
     model_text = None
-    
     if api_key:
         try:
             genai.configure(api_key=api_key)
@@ -220,22 +223,18 @@ with st.sidebar:
     st.subheader("1️⃣ Text Questions")
     num_questions = st.slider("Num Questions:", 0, 50, 5)
     
-    # --- DIFFICULTY LEVELS (NEW!) ---
     st.markdown("**Difficulty Level:**")
     c1, c2, c3 = st.columns(3)
     diff_easy = c1.checkbox("Easy", value=True)
     diff_medium = c2.checkbox("Medium", value=True)
     diff_hard = c3.checkbox("Hard")
     
-    # Logic to build the difficulty string
     selected_levels = []
     if diff_easy: selected_levels.append("Easy")
     if diff_medium: selected_levels.append("Medium")
     if diff_hard: selected_levels.append("Hard")
-    # If nothing selected, default to Medium
     if not selected_levels: selected_levels = ["Medium"]
     difficulty_str = ", ".join(selected_levels)
-    # --------------------------------
     
     language = st.radio("Language:", ["Hindi", "English", "Bilingual"])
     
@@ -278,20 +277,35 @@ with st.sidebar:
 
     btn_final = st.button("🚀 Generate Final Paper", type="primary")
 
+    # --- NEW: HISTORY SECTION IN SIDEBAR ---
+    st.markdown("---")
+    st.markdown("### 📜 Session History")
+    if len(st.session_state.paper_history) > 0:
+        for idx, item in enumerate(reversed(st.session_state.paper_history)):
+            with st.expander(f"{item['time']} - {item['topic']}"):
+                st.write(f"**Subject:** {item['subject']}")
+                st.download_button(
+                    label="📥 Download Again",
+                    data=item['html'],
+                    file_name=item['file_name'],
+                    mime="text/html",
+                    key=f"hist_btn_{idx}"
+                )
+    else:
+        st.caption("No papers generated in this session yet.")
+    # ----------------------------------------
+
 # --- 5. MAIN LOGIC ---
 if btn_final:
     if not api_key:
-        st.error("⚠️ API Key Missing. Please enter a key in the sidebar or check Secrets.")
+        st.error("⚠️ API Key Missing.")
     else:
         ai_text_final = ""
-        # Only try to generate AI text if questions are requested (>0)
         if num_questions > 0:
             if model_text:
                 with st.spinner('Generating...'):
                     try:
                         lang_prompt = "HINDI" if "Hindi" in language else "ENGLISH"
-                        
-                        # --- MODIFIED PROMPT WITH DIFFICULTY ---
                         prompt = f"""
                         Create {num_questions} Multiple Choice Questions (MCQs) for the topic '{topic}' ({subject}).
                         Language: {lang_prompt}.
@@ -305,8 +319,6 @@ if btn_final:
                         
                         At the very end, add [[BREAK]] followed by the Answer Key.
                         """
-                        # ---------------------------------------
-                        
                         response = model_text.generate_content(prompt)
                         ai_text_final = response.text
                     except Exception as e: st.error(f"AI Error: {e}")
@@ -326,5 +338,18 @@ if btn_final:
         }
         
         final_html = create_html_paper(ai_text_final, final_manual_text, final_manual_images, coaching_name, logo_b64, details, num_questions)
+        
+        # --- SAVE TO HISTORY ---
+        timestamp = datetime.now().strftime("%I:%M %p")
+        history_item = {
+            "time": timestamp,
+            "topic": topic,
+            "subject": subject,
+            "html": final_html,
+            "file_name": f"{subject}_{topic}.html"
+        }
+        st.session_state.paper_history.append(history_item)
+        # -----------------------
+        
         st.balloons()
         st.download_button("📥 Download HTML", final_html, "paper.html", "text/html")
