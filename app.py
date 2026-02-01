@@ -106,8 +106,6 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
     logo_html = f'<img src="{logo_data}" class="logo">' if logo_data else ''
 
     # --- HTML STRUCTURE ---
-    # We close the first main-container BEFORE the answer key to force a clean page break.
-    
     html_content = f"""
     <!DOCTYPE html>
     <html>
@@ -256,7 +254,10 @@ with st.sidebar:
     
     st.markdown("---")
     st.subheader("1️⃣ Text Questions")
-    num_questions = st.slider("Num Questions:", 0, 50, 5)
+    
+    # --- UPDATED SLIDER LIMIT TO 150 ---
+    num_questions = st.slider("Number of Questions:", min_value=0, max_value=150, value=10)
+    # -----------------------------------
     
     st.markdown("**Difficulty Level:**")
     c1, c2, c3 = st.columns(3)
@@ -291,7 +292,6 @@ with st.sidebar:
                         try:
                             img_pil = Image.open(diagram_img_upload)
                             lang_hint = "in HINDI" if "Hindi" in language else "in ENGLISH"
-                            # UPDATED PROMPT FOR HORIZONTAL OPTIONS IN DIAGRAMS
                             full_prompt = [f"Create 1 MCQ {lang_hint}. Instruction: {diagram_prompt}. Format: Question text, then (A)..(B)..(C)..(D).. (All on one line separated by spaces)", img_pil]
                             
                             response = model_vision.generate_content(full_prompt)
@@ -342,8 +342,6 @@ if btn_final:
                     try:
                         lang_prompt = "HINDI" if "Hindi" in language else "ENGLISH"
                         
-                        # --- UPDATED PROMPT FOR HORIZONTAL OPTIONS ---
-                        # We specifically ask AI to put options on the SAME line.
                         prompt = f"""
                         Create {num_questions} Multiple Choice Questions (MCQs) for the topic '{topic}' ({subject}).
                         Language: {lang_prompt}.
@@ -357,7 +355,6 @@ if btn_final:
                         
                         At the very end, add [[BREAK]] followed by the Answer Key.
                         """
-                        # ---------------------------------------------
                         
                         response = model_text.generate_content(prompt)
                         ai_text_final = response.text
