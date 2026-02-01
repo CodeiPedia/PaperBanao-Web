@@ -12,7 +12,6 @@ if 'manual_text_content' not in st.session_state:
     st.session_state.manual_text_content = ""
 if 'manual_uploaded_images' not in st.session_state:
     st.session_state.manual_uploaded_images = []
-# --- NEW: HISTORY STORAGE ---
 if 'paper_history' not in st.session_state:
     st.session_state.paper_history = []
 
@@ -57,11 +56,17 @@ def process_manual_text_auto_number(text, start_num):
         if not q_block: continue
         lines = q_block.split('\n')
         first_line = lines[0].strip()
+        # Remove existing numbering
         first_line = re.sub(r'^(Q\d+[.)]|\d+[.)]|Q\.)\s*', '', first_line, flags=re.IGNORECASE)
         formatted_question = f"<b>Q{current_q_num}. {first_line}</b>"
+        
+        # Horizontal Options Logic for Manual Text
         options_html = ""
         if len(lines) > 1:
-            options_html = "<br>" + "<br>".join([line.strip() for line in lines[1:]])
+            # Join options with spaces instead of breaks
+            options_joined = " &nbsp;&nbsp;&nbsp;&nbsp; ".join([line.strip() for line in lines[1:]])
+            options_html = f"<br><div style='margin-top:5px;'>{options_joined}</div>"
+            
         formatted_html_parts.append(f"{formatted_question}{options_html}")
         current_q_num += 1
     return "<br><br>".join(formatted_html_parts)
@@ -69,15 +74,19 @@ def process_manual_text_auto_number(text, start_num):
 def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, details_dict, ai_q_count):
     split_marker = "[[BREAK]]"
     ai_questions, ai_answers = "", ""
+    
+    # Separation Logic
     if split_marker in ai_text:
         parts = ai_text.split(split_marker)
         ai_questions = parts[0].replace(chr(10), '<br>')
-        if len(parts) > 1: ai_answers = parts[1].replace(chr(10), '<br>')
+        if len(parts) > 1: 
+            ai_answers = parts[1].replace(chr(10), '<br>')
     else:
         ai_questions = ai_text.replace(chr(10), '<br>')
 
     manual_questions_html = ""
     current_count = ai_q_count
+    
     if manual_text:
         start_from = current_count + 1
         formatted_manual = process_manual_text_auto_number(manual_text, start_from)
@@ -90,23 +99,14 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
         manual_images_html = "<br><br>"
         for img_file in manual_images:
             img_b64 = get_image_base64(img_file)
-            manual_images_html += f"<div class='question-box' style='margin-top: 20px;'><p><strong>Refer to figure:</strong></p><img src='{img_b64}' style='max-width: 100%; max-height: 400px; border: 1px solid #ccc; padding: 5px;'></div>"
+            manual_images_html += f"<div class='question-box' style='margin-top: 20px;'><p><strong>Refer to figure:</strong></p><img src='{img_b64}' style='max-width: 100%; max-height: 300px; border: 1px solid #ccc; padding: 5px;'></div>"
 
-    final_body = ai_questions + manual_questions_html + manual_images_html
+    final_questions_body = ai_questions + manual_questions_html + manual_images_html
     
-    if ai_answers:
-        final_body += f"""
-        <div class='page-break'></div>
-        <div class='header'>
-            <h2>Answer Key</h2>
-            <p>{details_dict['Subject']} - {details_dict['Topic']}</p>
-        </div>
-        <div class='answer-key-grid'>
-            {ai_answers}
-        </div>
-        """
-
     logo_html = f'<img src="{logo_data}" class="logo">' if logo_data else ''
+
+    # --- HTML STRUCTURE ---
+    # We close the first main-container BEFORE the answer key to force a clean page break.
     
     html_content = f"""
     <!DOCTYPE html>
@@ -116,25 +116,46 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
         <title>{details_dict['Topic']}</title>
         <link href='https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari&family=Roboto&display=swap' rel='stylesheet'>
         <style>
-            body {{ font-family: 'Roboto', sans-serif; padding: 40px; max-width: 900px; margin: auto; line-height: 1.5; }}
-            .main-container {{ border: 2px solid #000; padding: 30px; min-height: 950px; position: relative; }}
+            @media print {{
+                .page-break {{ page-break-before: always !important; display: block; }}
+                body {{ -webkit-print-color-adjust: exact; }}
+            }}
+            body {{ font-family: 'Roboto', sans-serif; padding: 20px; max-width: 900px; margin: auto; line-height: 1.4; }}
+            
+            /* Main Paper Container */
+            .main-container {{ 
+                border: 2px solid #000; 
+                padding: 30px; 
+                min-height: 950px; 
+                position: relative; 
+                background: white;
+            }}
+            
+            /* Answer Key Container (Separate Style) */
+            .answer-container {{
+                border: 2px dashed #444;
+                padding: 30px;
+                margin-top: 50px;
+                background: #fff;
+                page-break-before: always; /* Force New Page */
+            }}
+
             .header-container {{ display: flex; align-items: center; border-bottom: 2px double #000; padding-bottom: 15px; margin-bottom: 20px; }}
             .logo {{ max-width: 100px; max-height: 100px; margin-right: 20px; }}
             .header-text {{ flex-grow: 1; text-align: center; }}
             .header-text h1 {{ margin: 0; font-size: 32px; text-transform: uppercase; color: #d32f2f; }}
+            
             .info-table {{ width: 100%; margin-top: 10px; border-collapse: collapse; }}
             .info-table td {{ padding: 5px; font-weight: bold; border: 1px solid #ddd; }}
+            
             .question-box {{ margin-bottom: 15px; font-size: 16px; }}
-            .page-break {{ page-break-before: always; }}
             .footer {{ position: absolute; bottom: 10px; width: 100%; text-align: center; font-size: 10px; color: #555; }}
+            
             .answer-key-grid {{
                 column-count: 4;
                 column-gap: 20px;
                 font-size: 14px;
-                border: 1px solid #ccc;
-                padding: 15px;
-                background-color: #f9f9f9;
-                text-align: left;
+                margin-top: 10px;
             }}
         </style>
     </head>
@@ -147,17 +168,31 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
                 <tr><td colspan='2' style='text-align:center; background-color:#eee;'>Topic: {details_dict['Topic']}</td></tr>
             </table>
             <div style='font-size:12px; font-style:italic; margin:15px 0; padding:8px; background:#f9f9f9; border-left:4px solid #444;'>Instructions: All questions are compulsory.</div>
-            <div class='content'>{final_body}</div>
+            
+            <div class='content'>{final_questions_body}</div>
+            
             <div class='footer'>Created by PaperBanao.ai</div>
         </div>
+
+        {f'''
+        <div class='answer-container'>
+            <div class='header'>
+                <h2 style='text-align:center; margin-bottom:0;'>Answer Key</h2>
+                <p style='text-align:center; color:#666;'>{details_dict['Subject']} - {details_dict['Topic']}</p>
+                <hr>
+            </div>
+            <div class='answer-key-grid'>
+                {ai_answers}
+            </div>
+        </div>
+        ''' if ai_answers else ''}
+        
     </body>
     </html>
     """
     return html_content
 
 # --- 4. UI Setup ---
-
-# --- HEADER LOGIC ---
 if os.path.exists("logo.png"):
     logo_b64 = get_image_base64("logo.png")
     st.markdown(f"""
@@ -256,7 +291,8 @@ with st.sidebar:
                         try:
                             img_pil = Image.open(diagram_img_upload)
                             lang_hint = "in HINDI" if "Hindi" in language else "in ENGLISH"
-                            full_prompt = [f"Create 1 MCQ {lang_hint}. Instruction: {diagram_prompt}. Format: Question text, then (A)..", img_pil]
+                            # UPDATED PROMPT FOR HORIZONTAL OPTIONS IN DIAGRAMS
+                            full_prompt = [f"Create 1 MCQ {lang_hint}. Instruction: {diagram_prompt}. Format: Question text, then (A)..(B)..(C)..(D).. (All on one line separated by spaces)", img_pil]
                             
                             response = model_vision.generate_content(full_prompt)
                             sep = "\n\n" if st.session_state.manual_text_content else ""
@@ -277,7 +313,7 @@ with st.sidebar:
 
     btn_final = st.button("🚀 Generate Final Paper", type="primary")
 
-    # --- NEW: HISTORY SECTION IN SIDEBAR ---
+    # --- HISTORY SECTION ---
     st.markdown("---")
     st.markdown("### 📜 Session History")
     if len(st.session_state.paper_history) > 0:
@@ -293,63 +329,6 @@ with st.sidebar:
                 )
     else:
         st.caption("No papers generated in this session yet.")
-    # ----------------------------------------
 
 # --- 5. MAIN LOGIC ---
 if btn_final:
-    if not api_key:
-        st.error("⚠️ API Key Missing.")
-    else:
-        ai_text_final = ""
-        if num_questions > 0:
-            if model_text:
-                with st.spinner('Generating...'):
-                    try:
-                        lang_prompt = "HINDI" if "Hindi" in language else "ENGLISH"
-                        prompt = f"""
-                        Create {num_questions} Multiple Choice Questions (MCQs) for the topic '{topic}' ({subject}).
-                        Language: {lang_prompt}.
-                        Difficulty Level: A mix of {difficulty_str}.
-                        Format: 
-                        <b>Q1. Question Text Here?</b><br>
-                        (A) Option A<br>
-                        (B) Option B<br>
-                        (C) Option C<br>
-                        (D) Option D<br>
-                        
-                        At the very end, add [[BREAK]] followed by the Answer Key.
-                        """
-                        response = model_text.generate_content(prompt)
-                        ai_text_final = response.text
-                    except Exception as e: st.error(f"AI Error: {e}")
-            else:
-                st.error("❌ AI Model not connected.")
-
-        final_manual_text = st.session_state.manual_text_content
-        final_manual_images = st.session_state.manual_uploaded_images
-        logo_b64 = get_image_base64(final_logo)
-        
-        details = {
-            "Exam Name": exam_name,
-            "Subject": subject,
-            "Topic": topic,
-            "Time": time_limit,
-            "Marks": max_marks
-        }
-        
-        final_html = create_html_paper(ai_text_final, final_manual_text, final_manual_images, coaching_name, logo_b64, details, num_questions)
-        
-        # --- SAVE TO HISTORY ---
-        timestamp = datetime.now().strftime("%I:%M %p")
-        history_item = {
-            "time": timestamp,
-            "topic": topic,
-            "subject": subject,
-            "html": final_html,
-            "file_name": f"{subject}_{topic}.html"
-        }
-        st.session_state.paper_history.append(history_item)
-        # -----------------------
-        
-        st.balloons()
-        st.download_button("📥 Download HTML", final_html, "paper.html", "text/html")
