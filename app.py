@@ -332,3 +332,63 @@ with st.sidebar:
 
 # --- 5. MAIN LOGIC ---
 if btn_final:
+    if not api_key:
+        st.error("⚠️ API Key Missing.")
+    else:
+        ai_text_final = ""
+        if num_questions > 0:
+            if model_text:
+                with st.spinner('Generating...'):
+                    try:
+                        lang_prompt = "HINDI" if "Hindi" in language else "ENGLISH"
+                        
+                        # --- UPDATED PROMPT FOR HORIZONTAL OPTIONS ---
+                        # We specifically ask AI to put options on the SAME line.
+                        prompt = f"""
+                        Create {num_questions} Multiple Choice Questions (MCQs) for the topic '{topic}' ({subject}).
+                        Language: {lang_prompt}.
+                        Difficulty Level: A mix of {difficulty_str}.
+                        
+                        Strict Format:
+                        <b>Q1. Question Text Here?</b><br>
+                        (A) Option A &nbsp;&nbsp;&nbsp;&nbsp; (B) Option B &nbsp;&nbsp;&nbsp;&nbsp; (C) Option C &nbsp;&nbsp;&nbsp;&nbsp; (D) Option D
+                        
+                        (Note: Put all 4 options on a SINGLE line separated by space).
+                        
+                        At the very end, add [[BREAK]] followed by the Answer Key.
+                        """
+                        # ---------------------------------------------
+                        
+                        response = model_text.generate_content(prompt)
+                        ai_text_final = response.text
+                    except Exception as e: st.error(f"AI Error: {e}")
+            else:
+                st.error("❌ AI Model not connected.")
+
+        final_manual_text = st.session_state.manual_text_content
+        final_manual_images = st.session_state.manual_uploaded_images
+        logo_b64 = get_image_base64(final_logo)
+        
+        details = {
+            "Exam Name": exam_name,
+            "Subject": subject,
+            "Topic": topic,
+            "Time": time_limit,
+            "Marks": max_marks
+        }
+        
+        final_html = create_html_paper(ai_text_final, final_manual_text, final_manual_images, coaching_name, logo_b64, details, num_questions)
+        
+        # Save History
+        timestamp = datetime.now().strftime("%I:%M %p")
+        history_item = {
+            "time": timestamp,
+            "topic": topic,
+            "subject": subject,
+            "html": final_html,
+            "file_name": f"{subject}_{topic}.html"
+        }
+        st.session_state.paper_history.append(history_item)
+        
+        st.balloons()
+        st.download_button("📥 Download HTML", final_html, "paper.html", "text/html")
