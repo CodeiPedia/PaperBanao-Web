@@ -68,20 +68,14 @@ def process_manual_text_auto_number(text, start_num):
 
 def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, details_dict, paper_format):
     
-    # --- 🌟 FORMATTING FIXES (Star & Chemistry Fix) ---
-    # 1. Convert **bold** to true HTML <b>bold</b>
+    # --- 🌟 FORMATTING FIXES ---
     ai_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', ai_text)
-    # 2. Remove Markdown Headers (#)
     ai_text = re.sub(r'#{1,6}\s?', '', ai_text)
     
-    # 3. FIX CHEMISTRY FORMULAS (LaTeX to HTML Subscript)
-    # This catches $_2$ or $_{12}$ and makes it <sub>2</sub>
     ai_text = re.sub(r'\$_\{([0-9a-zA-Z+-]+)\}\$', r'<sub>\1</sub>', ai_text)
     ai_text = re.sub(r'\$_([0-9a-zA-Z+-]+)\$', r'<sub>\1</sub>', ai_text)
-    # This catches plain _2 or _{12}
     ai_text = re.sub(r'_\{([0-9a-zA-Z+-]+)\}', r'<sub>\1</sub>', ai_text)
     ai_text = re.sub(r'_([0-9]+)', r'<sub>\1</sub>', ai_text)
-    # Finally, remove any leftover $ signs that AI might have generated
     ai_text = ai_text.replace('$', '')
     # --------------------------------------------------
 
@@ -265,7 +259,10 @@ with st.sidebar:
     q_fib = st.checkbox("Fill in the Blanks", value=False)
     q_subj = st.checkbox("Subjective (Short/Long Qs)", value=False)
 
-    num_questions = st.slider("Approx. Number of Questions:", 5, 150, 20)
+    # --- 🌟 UI FIX: Changed Slider to Number Input Box ---
+    num_questions = st.number_input("Approx. Number of Questions:", min_value=1, max_value=150, value=20, step=1)
+    # ---------------------------------------------------
+    
     language = st.radio("Language:", ["Hindi", "English", "Bilingual"])
     
     st.markdown("---")
@@ -395,10 +392,4 @@ if btn_final:
                     
                     final_html = create_html_paper(ai_text_final, final_manual_text, final_manual_images, coaching_name, get_image_base64(final_logo), details, paper_format)
                     
-                    timestamp = datetime.now().strftime("%I:%M %p")
-                    st.session_state.paper_history.append({"time": timestamp, "topic": topic, "subject": subject, "format": paper_format, "html": final_html, "file_name": f"{subject}_{paper_format}.html"})
-                    
-                    st.balloons()
-                    st.download_button("📥 Download HTML", final_html, f"paper_{paper_format}.html", "text/html")
-                except Exception as e: 
-                    st.error(f"❌ AI Error (Please check your API Key / Network): {e}")
+                    timestamp = datetime.now().strftime("%I:%M
