@@ -121,7 +121,7 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
             .info-table {{ width: 100%; margin-top: 10px; border-collapse: collapse; margin-bottom: 15px; }}
             .info-table td {{ padding: 5px; font-weight: bold; border: 1px solid #ddd; font-size: 13px; }}
             
-            /* --- NEW: 2-COLUMN CSS FOR COACHING STYLE --- */
+            /* --- 2-COLUMN CSS FOR COACHING STYLE --- */
             .content-2-column {{
                 column-count: 2;
                 column-gap: 40px;
@@ -202,12 +202,32 @@ with st.sidebar:
     elif "GOOGLE_API_KEY" in st.secrets: api_key = st.secrets["GOOGLE_API_KEY"]
     else: st.error("❌ Key Missing.")
 
+    # --- NEW SMART MODEL SELECTOR (FIX FOR 404 ERROR) ---
     model_text = None
+    model_vision = None
     if api_key:
         try:
             genai.configure(api_key=api_key)
-            model_text = genai.GenerativeModel('gemini-1.5-pro-latest') # Ensure good quality
-        except: pass
+            all_models = genai.list_models()
+            for m in all_models:
+                if 'generateContent' in m.supported_generation_methods:
+                    if 'gemini-1.5-flash' in m.name: # Best and fastest for free tier
+                        model_text = genai.GenerativeModel(m.name)
+                        model_vision = genai.GenerativeModel(m.name)
+                        break
+                    elif 'gemini-pro' in m.name and not model_text:
+                        model_text = genai.GenerativeModel(m.name)
+            
+            # Fallback if specific names aren't found
+            if not model_text:
+                for m in all_models:
+                    if 'generateContent' in m.supported_generation_methods:
+                        model_text = genai.GenerativeModel(m.name)
+                        break
+            if not model_vision: model_vision = model_text
+        except Exception as e:
+            pass
+    # ----------------------------------------------------
 
     st.markdown("---")
     coaching_name = st.text_input("Institute Name:", value="Maa Sarswati Coaching Center")
@@ -221,7 +241,7 @@ with st.sidebar:
     with col1: time_limit = st.text_input("Time:", value="3 Hours")
     with col2: max_marks = st.text_input("Marks:", value="50")
     
-    # --- NEW: FORMAT SELECTOR ---
+    # --- FORMAT SELECTOR ---
     st.markdown("---")
     st.subheader("📑 Select Paper Format")
     paper_format = st.selectbox("Format Type:", [
@@ -231,7 +251,7 @@ with st.sidebar:
         "Standard Custom"
     ])
 
-    # --- NEW: QUESTION TYPES ---
+    # --- QUESTION TYPES ---
     st.markdown("**Question Types to Include:**")
     q_mcq = st.checkbox("Multiple Choice (MCQs)", value=True)
     q_tf = st.checkbox("True / False", value=False)
@@ -242,6 +262,35 @@ with st.sidebar:
     language = st.radio("Language:", ["Hindi", "English", "Bilingual"])
     
     st.markdown("---")
+    
+    # Diagram Expander Update for dynamic vision model
+    st.subheader("2️⃣ Diagram Questions")
+    with st.expander("✨ Generate from Diagram", expanded=False):
+        diagram_img_upload = st.file_uploader("Upload Diagram:", type=['png', 'jpg', 'jpeg'], key="dia_up")
+        
+        if diagram_img_upload:
+            st.image(diagram_img_upload, caption="Preview", use_column_width=True)
+            diagram_prompt = st.text_input("Instruction:", key="dia_p")
+            
+            if st.button("Generate Question"):
+                if not api_key: st.error("❌ API Key Required")
+                elif not model_vision: st.error("❌ Vision Model unavailable.")
+                elif not diagram_prompt: st.warning("⚠️ Enter instruction.")
+                else:
+                    with st.spinner("AI Looking..."):
+                        try:
+                            img_pil = Image.open(diagram_img_upload)
+                            lang_hint = "in HINDI" if "Hindi" in language else "in ENGLISH"
+                            full_prompt = [f"Create 1 MCQ {lang_hint}. Instruction: {diagram_prompt}. Format: Question text, then (A)..(B)..(C)..(D).. (All on one line separated by spaces)", img_pil]
+                            
+                            response = model_vision.generate_content(full_prompt)
+                            sep = "\n\n" if st.session_state.manual_text_content else ""
+                            st.session_state.manual_text_content += sep + response.text.strip()
+                            st.session_state.manual_uploaded_images.append(diagram_img_upload)
+                            st.success("Added!")
+                            st.rerun()
+                        except Exception as e: st.error(f"Error: {e}")
+
     btn_final = st.button("🚀 Generate Final Paper", type="primary")
 
     st.markdown("---")
@@ -275,49 +324,10 @@ if btn_final:
                     if paper_format == "CBSE Board Pattern":
                         base_prompt = f"""
                         Create a CBSE style question paper for topic '{topic}' ({subject}). Language: {lang_prompt}.
-                        Include the following question types: {types_str}.
+                        Include the following question types: {types_str}. Total approx questions: {num_questions}.
                         Structure it strictly like a CBSE Final Exam:
                         <b>General Instructions:</b><br>...<br><br>
                         <b>SECTION A (Objective Type):</b> Include MCQs, Assertion-Reason, Fill in blanks (if selected).<br>
                         <b>SECTION B (Short Answer Type):</b> 2-3 mark questions.<br>
                         <b>SECTION C (Long Answer Type):</b> 5 mark questions.<br>
-                        Wrap each question in <div class='question-item'>...</div> for formatting.
-                        """
-                    elif paper_format == "BSEB (Bihar Board) Pattern":
-                        base_prompt = f"""
-                        Create a BSEB (Bihar Board) style question paper for topic '{topic}' ({subject}). Language: {lang_prompt}.
-                        Structure it strictly like a Bihar Board Exam:
-                        <b>खण्ड-अ (वस्तुनिष्ठ प्रश्न / Objective Type):</b> 50% MCQs (Provide 4 options A, B, C, D for each).<br>
-                        <b>खण्ड-ब (विषयनिष्ठ प्रश्न / Subjective Type):</b> 50% Short and Long answer questions.<br>
-                        Include these types if selected: {types_str}.
-                        Wrap each question in <div class='question-item'>...</div>.
-                        """
-                    else: # Coaching Style or Standard
-                        base_prompt = f"""
-                        Create a Test Paper for topic '{topic}' ({subject}). Language: {lang_prompt}. Total Questions: {num_questions}.
-                        Include ONLY these selected question types: {types_str}.
-                        Format guidelines for MCQs: 
-                        <div class='question-item'><b>Q1. Question Text Here?</b><br>(A) Option A &nbsp;&nbsp;&nbsp;&nbsp; (B) Option B &nbsp;&nbsp;&nbsp;&nbsp; (C) Option C &nbsp;&nbsp;&nbsp;&nbsp; (D) Option D</div>
-                        Format guidelines for True/False or Fill in Blanks:
-                        <div class='question-item'><b>Qx. Question Text Here.</b> (True/False)</div>
-                        """
-
-                    # Add Answer Key Instruction
-                    final_prompt = base_prompt + """
-                    \n\nAt the very end of the output, add exactly [[BREAK]] followed by the Answer Key for ALL objective and subjective questions.
-                    """
-
-                    response = model_text.generate_content(final_prompt)
-                    ai_text_final = response.text
-                    
-                    details = {"Exam Name": exam_name, "Subject": subject, "Topic": topic, "Time": time_limit, "Marks": max_marks}
-                    final_html = create_html_paper(ai_text_final, "", [], coaching_name, get_image_base64(final_logo), details, paper_format)
-                    
-                    # Save History
-                    timestamp = datetime.now().strftime("%I:%M %p")
-                    st.session_state.paper_history.append({"time": timestamp, "topic": topic, "subject": subject, "format": paper_format, "html": final_html, "file_name": f"{subject}_{paper_format}.html"})
-                    
-                    st.balloons()
-                    st.download_button("📥 Download HTML", final_html, f"paper_{paper_format}.html", "text/html")
-                except Exception as e: st.error(f"AI Error: {e}")
-    
+                        Wrap each question in <div class
