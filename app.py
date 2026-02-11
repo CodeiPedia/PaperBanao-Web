@@ -67,6 +67,14 @@ def process_manual_text_auto_number(text, start_num):
     return "<br><br>".join(formatted_html_parts)
 
 def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, details_dict, paper_format):
+    
+    # --- 🌟 STAR FIX: Convert Markdown to HTML ---
+    # Convert **bold** to true HTML <b>bold</b>
+    ai_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', ai_text)
+    # Remove # (Headers) from Markdown to keep text clean
+    ai_text = re.sub(r'#{1,6}\s?', '', ai_text)
+    # ----------------------------------------------
+
     split_marker = "[[BREAK]]"
     ai_questions, ai_answers = "", ""
     
@@ -171,26 +179,20 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
     """
     return html_content
 
-
-# --- NEW SMART MODEL FINDER (ANTI-404 ERROR) ---
+# --- NEW SMART MODEL FINDER ---
 def get_working_model(api_key):
     genai.configure(api_key=api_key)
     best_model_name = None
     
-    # Google से पूछें कि कौन से मॉडल उपलब्ध हैं
     models = genai.list_models()
     for m in models:
         if 'generateContent' in m.supported_generation_methods:
-            # 1.5 Flash सबसे तेज़ है, अगर मिले तो तुरंत चुन लें
             if '1.5-flash' in m.name:
                 return genai.GenerativeModel(m.name)
-            # अगर Flash नहीं है, तो 1.5 Pro ढूँढें
             elif '1.5-pro' in m.name and not best_model_name:
                 best_model_name = m.name
-            # अगर कुछ नहीं मिल रहा, तो जो भी 'gemini-pro' मिले उसे चुन लें
             elif 'gemini-pro' in m.name and not best_model_name:
                 best_model_name = m.name
-            # सबसे आखिर में, जो भी मॉडल मिले उसे सेव कर लें
             elif not best_model_name:
                 best_model_name = m.name
                 
@@ -272,7 +274,6 @@ with st.sidebar:
                 else:
                     with st.spinner("AI Looking..."):
                         try:
-                            # Using Smart Model Finder
                             smart_model = get_working_model(api_key)
                             
                             img_pil = Image.open(diagram_img_upload)
@@ -313,7 +314,6 @@ if btn_final:
         if num_questions > 0:
             with st.spinner(f'Generating {paper_format} Paper...'):
                 try:
-                    # Using Smart Model Finder
                     smart_model = get_working_model(api_key)
                     
                     lang_prompt = "HINDI (Use authentic Hindi terminology)" if "Hindi" in language else "ENGLISH"
@@ -325,58 +325,26 @@ if btn_final:
                     if q_subj: types_list.append("Subjective (Short and Long Answer questions)")
                     types_str = ", ".join(types_list) if types_list else "MCQs"
 
-                    base_prompt = ""
+                    base_prompt = f"""
+                    Create a Test Paper for topic '{topic}' ({subject}). Language: {lang_prompt}. Total Questions: {num_questions}.
+                    Include ONLY these selected question types: {types_str}.
+                    
+                    CRITICAL INSTRUCTIONS: DO NOT USE markdown asterisks (**) for bold text. 
+                    If you need to make text bold, use HTML <b> tags (e.g., <b>Answer Key</b>).
+                    
+                    Format guidelines for MCQs: 
+                    <div class='question-item'><b>Q1. Question Text Here?</b><br>(A) Option A &nbsp;&nbsp;&nbsp;&nbsp; (B) Option B &nbsp;&nbsp;&nbsp;&nbsp; (C) Option C &nbsp;&nbsp;&nbsp;&nbsp; (D) Option D</div>
+                    Format guidelines for True/False or Fill in Blanks:
+                    <div class='question-item'><b>Qx. Question Text Here.</b> (True/False)</div>
+                    Format guidelines for Subjective:
+                    <div class='question-item'><b>Qx. Question Text Here.</b><br><br><br></div>
+                    """
                     
                     if paper_format == "CBSE Board Pattern":
                         base_prompt = f"""
                         Create a CBSE style question paper for topic '{topic}' ({subject}). Language: {lang_prompt}.
                         Include the following question types: {types_str}. Total approx questions: {num_questions}.
-                        Structure it strictly like a CBSE Final Exam:
+                        Structure it strictly like a CBSE Final Exam.
+                        CRITICAL INSTRUCTIONS: DO NOT USE markdown asterisks (**) for bold text. Use HTML <b> tags.
                         <b>General Instructions:</b><br>...<br><br>
-                        <b>SECTION A (Objective Type):</b> Include MCQs, Assertion-Reason, Fill in blanks (if selected).<br>
-                        <b>SECTION B (Short Answer Type):</b> 2-3 mark questions.<br>
-                        <b>SECTION C (Long Answer Type):</b> 5 mark questions.<br>
-                        Wrap each question in <div class='question-item'>...</div> for formatting.
-                        """
-                    elif paper_format == "BSEB (Bihar Board) Pattern":
-                        base_prompt = f"""
-                        Create a BSEB (Bihar Board) style question paper for topic '{topic}' ({subject}). Language: {lang_prompt}. Total approx questions: {num_questions}.
-                        Structure it strictly like a Bihar Board Exam:
-                        <b>खण्ड-अ (वस्तुनिष्ठ प्रश्न / Objective Type):</b> 50% MCQs (Provide 4 options A, B, C, D for each).<br>
-                        <b>खण्ड-ब (विषयनिष्ठ प्रश्न / Subjective Type):</b> 50% Short and Long answer questions.<br>
-                        Include these types if selected: {types_str}.
-                        Wrap each question in <div class='question-item'>...</div>.
-                        """
-                    else: 
-                        base_prompt = f"""
-                        Create a Test Paper for topic '{topic}' ({subject}). Language: {lang_prompt}. Total Questions: {num_questions}.
-                        Include ONLY these selected question types: {types_str}.
-                        Format guidelines for MCQs: 
-                        <div class='question-item'><b>Q1. Question Text Here?</b><br>(A) Option A &nbsp;&nbsp;&nbsp;&nbsp; (B) Option B &nbsp;&nbsp;&nbsp;&nbsp; (C) Option C &nbsp;&nbsp;&nbsp;&nbsp; (D) Option D</div>
-                        Format guidelines for True/False or Fill in Blanks:
-                        <div class='question-item'><b>Qx. Question Text Here.</b> (True/False)</div>
-                        Format guidelines for Subjective:
-                        <div class='question-item'><b>Qx. Question Text Here.</b><br><br><br></div>
-                        """
-
-                    final_prompt = base_prompt + """
-                    \n\nAt the very end of the output, add exactly [[BREAK]] followed by the Answer Key for ALL objective and subjective questions.
-                    """
-
-                    response = smart_model.generate_content(final_prompt)
-                    ai_text_final = response.text
-                    
-                    details = {"Exam Name": exam_name, "Subject": subject, "Topic": topic, "Time": time_limit, "Marks": max_marks}
-                    
-                    final_manual_text = st.session_state.manual_text_content
-                    final_manual_images = st.session_state.manual_uploaded_images
-                    
-                    final_html = create_html_paper(ai_text_final, final_manual_text, final_manual_images, coaching_name, get_image_base64(final_logo), details, paper_format)
-                    
-                    timestamp = datetime.now().strftime("%I:%M %p")
-                    st.session_state.paper_history.append({"time": timestamp, "topic": topic, "subject": subject, "format": paper_format, "html": final_html, "file_name": f"{subject}_{paper_format}.html"})
-                    
-                    st.balloons()
-                    st.download_button("📥 Download HTML", final_html, f"paper_{paper_format}.html", "text/html")
-                except Exception as e: 
-                    st.error(f"❌ AI Error (Please check your API Key / Network): {e}")
+                        <b>SECTION A (Objective Type):</b> Include MCQs,
