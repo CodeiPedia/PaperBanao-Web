@@ -78,8 +78,12 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
         ai_questions = ai_text.replace(chr(10), '<br>')
 
     manual_questions_html = ""
-    # Add manual questions logic here if needed
+    current_count = 10 # Default offset if mixed
     
+    if manual_text:
+        formatted_manual = process_manual_text_auto_number(manual_text, current_count)
+        manual_questions_html = f"<br><br>{formatted_manual}"
+
     manual_images_html = ""
     if manual_images:
         manual_images_html = "<br><br>"
@@ -186,24 +190,65 @@ if os.path.exists("logo.png"):
         <img src="{logo_b64}" style="width: 80px; height: 80px; margin-right: 20px; border-radius: 12px;">
         <div style="text-align: left;">
             <h1 style="margin: 0; font-size: 42px; color: #1E88E5; line-height: 1.2;">PaperBanao.ai</h1>
-            <p style="margin: 0; font-size: 14px; color: #666;">AI Exam Paper Generator (Board Patterns Added!)</p>
+            <p style="margin: 0; font-size: 14px; color: #666;">AI Exam Paper Generator</p>
         </div>
     </div>
     """, unsafe_allow_html=True)
 else:
     st.markdown('<div class="main-header" style="text-align: center; color: #1E88E5;"><h1>📄 PaperBanao.ai</h1></div>', unsafe_allow_html=True)
 
-
 with st.sidebar:
     st.header("⚙️ Control Panel")
     
-    # --- STRICT API KEY REQUIREMENT ---
+    # --- PURE USER INPUT API KEY (NO SECRETS) ---
     st.markdown("### 🔑 API License Required")
-    st.info("To use this app, you must provide your own free Gemini API Key from Google AI Studio.")
-    api_key = st.text_input("Enter Your Gemini API Key:", type="password")
+    api_key = st.text_input("Enter Your Gemini API Key:", type="password", help="Get your free key from Google AI Studio")
     
     if not api_key:
         st.warning("⚠️ Please enter your API Key to proceed.")
     else:
         st.success("✅ API Key Loaded!")
-    #
+
+    st.markdown("---")
+    coaching_name = st.text_input("Institute Name:", value="Maa Sarswati Coaching Center")
+    uploaded_logo = st.file_uploader("Upload Institute Logo", type=['png', 'jpg'])
+    final_logo = uploaded_logo 
+    
+    exam_name = st.text_input("Exam Name:", value="Final Board Exam")
+    subject = st.text_input("Subject:", value="Biology")
+    topic = st.text_input("Topic:", value="Life Processes")
+    col1, col2 = st.columns(2)
+    with col1: time_limit = st.text_input("Time:", value="3 Hours")
+    with col2: max_marks = st.text_input("Marks:", value="50")
+    
+    # --- FORMAT SELECTOR ---
+    st.markdown("---")
+    st.subheader("📑 Select Paper Format")
+    paper_format = st.selectbox("Format Type:", [
+        "Coaching Style (2-Column PDF Style)", 
+        "CBSE Board Pattern", 
+        "BSEB (Bihar Board) Pattern",
+        "Standard Custom"
+    ])
+
+    # --- QUESTION TYPES ---
+    st.markdown("**Question Types to Include:**")
+    q_mcq = st.checkbox("Multiple Choice (MCQs)", value=True)
+    q_tf = st.checkbox("True / False", value=False)
+    q_fib = st.checkbox("Fill in the Blanks", value=False)
+    q_subj = st.checkbox("Subjective (Short/Long Qs)", value=False)
+
+    num_questions = st.slider("Approx. Number of Questions:", 5, 150, 20)
+    language = st.radio("Language:", ["Hindi", "English", "Bilingual"])
+    
+    st.markdown("---")
+    st.subheader("2️⃣ Diagram Questions")
+    with st.expander("✨ Generate from Diagram", expanded=False):
+        diagram_img_upload = st.file_uploader("Upload Diagram:", type=['png', 'jpg', 'jpeg'], key="dia_up")
+        
+        if diagram_img_upload:
+            st.image(diagram_img_upload, caption="Preview", use_column_width=True)
+            diagram_prompt = st.text_input("Instruction:", key="dia_p")
+            
+            if st.button("Generate Question"):
+                if not api_key: st.error("❌ API Key Required. Enter it at the top of
