@@ -330,4 +330,46 @@ if btn_final:
                         <b>SECTION A (Objective Type):</b> Include MCQs, Assertion-Reason, Fill in blanks (if selected).<br>
                         <b>SECTION B (Short Answer Type):</b> 2-3 mark questions.<br>
                         <b>SECTION C (Long Answer Type):</b> 5 mark questions.<br>
-                        Wrap each question in <div class
+                        Wrap each question in <div class='question-item'>...</div> for formatting.
+                        """
+                    elif paper_format == "BSEB (Bihar Board) Pattern":
+                        base_prompt = f"""
+                        Create a BSEB (Bihar Board) style question paper for topic '{topic}' ({subject}). Language: {lang_prompt}. Total approx questions: {num_questions}.
+                        Structure it strictly like a Bihar Board Exam:
+                        <b>खण्ड-अ (वस्तुनिष्ठ प्रश्न / Objective Type):</b> 50% MCQs (Provide 4 options A, B, C, D for each).<br>
+                        <b>खण्ड-ब (विषयनिष्ठ प्रश्न / Subjective Type):</b> 50% Short and Long answer questions.<br>
+                        Include these types if selected: {types_str}.
+                        Wrap each question in <div class='question-item'>...</div>.
+                        """
+                    else: # Coaching Style or Standard
+                        base_prompt = f"""
+                        Create a Test Paper for topic '{topic}' ({subject}). Language: {lang_prompt}. Total Questions: {num_questions}.
+                        Include ONLY these selected question types: {types_str}.
+                        Format guidelines for MCQs: 
+                        <div class='question-item'><b>Q1. Question Text Here?</b><br>(A) Option A &nbsp;&nbsp;&nbsp;&nbsp; (B) Option B &nbsp;&nbsp;&nbsp;&nbsp; (C) Option C &nbsp;&nbsp;&nbsp;&nbsp; (D) Option D</div>
+                        Format guidelines for True/False or Fill in Blanks:
+                        <div class='question-item'><b>Qx. Question Text Here.</b> (True/False)</div>
+                        Format guidelines for Subjective:
+                        <div class='question-item'><b>Qx. Question Text Here.</b><br><br><br></div>
+                        """
+
+                    # Add Answer Key Instruction
+                    final_prompt = base_prompt + """
+                    \n\nAt the very end of the output, add exactly [[BREAK]] followed by the Answer Key for ALL objective and subjective questions.
+                    """
+
+                    response = model_text.generate_content(final_prompt)
+                    ai_text_final = response.text
+                    
+                    details = {"Exam Name": exam_name, "Subject": subject, "Topic": topic, "Time": time_limit, "Marks": max_marks}
+                    final_html = create_html_paper(ai_text_final, "", [], coaching_name, get_image_base64(final_logo), details, paper_format)
+                    
+                    # Save History
+                    timestamp = datetime.now().strftime("%I:%M %p")
+                    st.session_state.paper_history.append({"time": timestamp, "topic": topic, "subject": subject, "format": paper_format, "html": final_html, "file_name": f"{subject}_{paper_format}.html"})
+                    
+                    st.balloons()
+                    st.download_button("📥 Download HTML", final_html, f"paper_{paper_format}.html", "text/html")
+                except Exception as e: st.error(f"AI Error: {e}")
+        elif not model_text:
+             st.error("❌ AI Model is not loading. Please check your API Key limits.")
