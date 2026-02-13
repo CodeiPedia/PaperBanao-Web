@@ -126,4 +126,190 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
             .header-text p {{ margin: 2px 0; font-size: 14px; font-weight: bold; }}
             .info-table {{ width: 100%; margin-top: 10px; border-collapse: collapse; margin-bottom: 15px; }}
             .info-table td {{ padding: 5px; font-weight: bold; border: 1px solid #ddd; font-size: 13px; }}
-            .content-2-
+            .content-2-column {{ column-count: 2; column-gap: 40px; column-rule: 1px solid #ccc; }}
+            .content-standard {{ column-count: 1; }}
+            .question-item {{ break-inside: avoid-column; margin-bottom: 15px; }}
+            .footer {{ position: absolute; bottom: 10px; width: 100%; text-align: center; font-size: 10px; color: #555; left: 0; }}
+            .answer-key-grid {{ column-count: 4; column-gap: 20px; font-size: 14px; margin-top: 10px; }}
+        </style>
+    </head>
+    <body>
+        <div class='main-container'>
+            <div class='header-container'>{logo_html}<div class='header-text'><h1>{coaching}</h1><p>Viral Objective/Subjective Questions</p></div></div>
+            <table class='info-table'>
+                <tr><td>Exam: {details_dict['Exam Name']}</td><td>Subject: {details_dict['Subject']}</td></tr>
+                <tr><td>Time: {details_dict['Time']}</td><td>Marks: {details_dict['Marks']}</td></tr>
+                <tr><td colspan='2' style='text-align:center; background-color:#eee;'>Topic: {details_dict['Topic']}</td></tr>
+            </table>
+            <div class='{content_class}'>{final_questions_body}</div>
+            <div class='footer'>Created by PaperBanao.ai</div>
+        </div>
+        {f'''<div class='answer-container'><div class='header'><h2 style='text-align:center; margin-bottom:0;'>Answer Key</h2><p style='text-align:center; color:#666;'>{details_dict['Subject']} - {details_dict['Topic']}</p><hr></div><div class='answer-key-grid'>{ai_answers}</div></div>''' if ai_answers else ''}
+    </body>
+    </html>
+    """
+    return html_content
+
+def get_working_model(api_key):
+    genai.configure(api_key=api_key)
+    best_model_name = None
+    models = genai.list_models()
+    for m in models:
+        if 'generateContent' in m.supported_generation_methods:
+            if '1.5-flash' in m.name: return genai.GenerativeModel(m.name)
+            elif '1.5-pro' in m.name and not best_model_name: best_model_name = m.name
+            elif 'gemini-pro' in m.name and not best_model_name: best_model_name = m.name
+            elif not best_model_name: best_model_name = m.name
+    if best_model_name: return genai.GenerativeModel(best_model_name)
+    else: raise Exception("No text generation models found in your Google account.")
+
+# --- 5. UI SETUP ---
+if os.path.exists("logo.png"):
+    logo_b64 = get_image_base64("logo.png")
+    st.markdown(f"""
+    <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+        <img src="{logo_b64}" style="width: 80px; height: 80px; margin-right: 20px; border-radius: 12px;">
+        <div style="text-align: left;">
+            <h1 style="margin: 0; font-size: 42px; color: #1E88E5; line-height: 1.2;">PaperBanao.ai</h1>
+            <p style="margin: 0; font-size: 14px; color: #666;">AI Exam Paper Generator</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown('<div class="main-header" style="text-align: center; color: #1E88E5;"><h1>📄 PaperBanao.ai</h1></div>', unsafe_allow_html=True)
+
+with st.sidebar:
+    st.header("⚙️ Control Panel")
+    st.markdown("### 🔑 API License")
+    api_key = st.text_input("Enter Your Gemini API Key:", type="password")
+    
+    if api_key: st.success("✅ API Key Ready!")
+    else: st.warning("⚠️ Enter API Key to proceed.")
+
+    st.markdown("---")
+    coaching_name = st.text_input("Institute Name:", value="Maa Sarswati Coaching Center")
+    uploaded_logo = st.file_uploader("Upload Institute Logo", type=['png', 'jpg'])
+    final_logo = uploaded_logo 
+    
+    exam_name = st.text_input("Exam Name:", value="Final Board Exam")
+    subject = st.text_input("Subject:", value="Biology")
+    topic = st.text_input("Topic:", value="Life Processes")
+    col1, col2 = st.columns(2)
+    with col1: time_limit = st.text_input("Time:", value="3 Hours")
+    with col2: max_marks = st.text_input("Marks:", value="50")
+    
+    st.markdown("---")
+    paper_format = st.selectbox("Format Type:", ["Coaching Style (2-Column PDF Style)", "CBSE Board Pattern", "BSEB (Bihar Board) Pattern", "Standard Custom"])
+    st.markdown("**Question Types to Include:**")
+    q_mcq = st.checkbox("Multiple Choice (MCQs)", value=True)
+    q_tf = st.checkbox("True / False", value=False)
+    q_fib = st.checkbox("Fill in the Blanks", value=False)
+    q_subj = st.checkbox("Subjective (Short/Long Qs)", value=False)
+
+    # UNLIMITED FOR TESTING
+    num_questions = st.number_input("Number of Questions:", min_value=1, max_value=150, value=20, step=1)
+
+    language = st.radio("Language:", ["Hindi", "English", "Bilingual"])
+    st.markdown("---")
+    st.subheader("2️⃣ Diagram Questions")
+    with st.expander("✨ Generate from Diagram", expanded=False):
+        diagram_img_upload = st.file_uploader("Upload Diagram:", type=['png', 'jpg', 'jpeg'], key="dia_up")
+        if diagram_img_upload:
+            st.image(diagram_img_upload, caption="Preview", use_column_width=True)
+            diagram_prompt = st.text_input("Instruction:", key="dia_p")
+            if st.button("Generate Question"):
+                if not api_key: st.error("❌ API Key Required.")
+                else:
+                    with st.spinner("AI Looking..."):
+                        try:
+                            smart_model = get_working_model(api_key)
+                            img_pil = Image.open(diagram_img_upload)
+                            lang_hint = "in HINDI" if "Hindi" in language else "in ENGLISH"
+                            full_prompt = [f"Create 1 MCQ {lang_hint}. Instruction: {diagram_prompt}. Format: Question text, then (A)..(B)..(C)..(D).. (All on one line separated by spaces)", img_pil]
+                            response = smart_model.generate_content(full_prompt)
+                            sep = "\n\n" if st.session_state.manual_text_content else ""
+                            st.session_state.manual_text_content += sep + response.text.strip()
+                            st.session_state.manual_uploaded_images.append(diagram_img_upload)
+                            st.success("Added!")
+                            st.rerun()
+                        except Exception as e: st.error(f"Error: {e}")
+
+    st.markdown("---")
+    with st.expander("3️⃣ Review / Edit Manual"):
+        manual_text = st.text_area("Editor", value=st.session_state.manual_text_content, height=200)
+        st.session_state.manual_text_content = manual_text
+        if st.button("Clear All"):
+            st.session_state.manual_text_content = ""
+            st.session_state.manual_uploaded_images = []
+            st.rerun()
+
+    btn_final = st.button("🚀 Generate Final Paper", type="primary")
+
+    st.markdown("---")
+    st.markdown("### 📜 Session History")
+    if len(st.session_state.paper_history) > 0:
+        for idx, item in enumerate(reversed(st.session_state.paper_history)):
+            with st.expander(f"{item['time']} - {item['format']}"):
+                st.download_button(label="📥 Download Again", data=item['html'], file_name=item['file_name'], mime="text/html", key=f"hist_btn_{idx}")
+
+# --- 6. MAIN LOGIC ---
+if btn_final:
+    if not api_key:
+        st.error("⚠️ Please enter your API Key in the sidebar first!")
+    else:
+        if num_questions > 0:
+            with st.spinner(f'Generating {paper_format} Paper...'):
+                try:
+                    smart_model = get_working_model(api_key)
+                    lang_prompt = "HINDI (Use authentic Hindi terminology)" if "Hindi" in language else "ENGLISH"
+                    types_list = []
+                    if q_mcq: types_list.append("MCQs")
+                    if q_tf: types_list.append("True/False")
+                    if q_fib: types_list.append("Fill in the Blanks")
+                    if q_subj: types_list.append("Subjective (Short and Long Answer questions)")
+                    types_str = ", ".join(types_list) if types_list else "MCQs"
+
+                    base_prompt = f"""
+                    Create a Test Paper for topic '{topic}' ({subject}). Language: {lang_prompt}. Total Questions: {num_questions}.
+                    Include ONLY these selected question types: {types_str}.
+                    CRITICAL INSTRUCTIONS: 
+                    1. DO NOT USE markdown asterisks (**) for bold text. Use HTML <b> tags.
+                    2. DO NOT USE LaTeX or `$` signs for chemical formulas. Use HTML <sub> tags strictly (e.g., C<sub>6</sub>H<sub>12</sub>O<sub>6</sub>).
+                    Format guidelines for MCQs: 
+                    <div class='question-item'><b>Q1. Question Text Here?</b><br>(A) Option A &nbsp;&nbsp;&nbsp;&nbsp; (B) Option B &nbsp;&nbsp;&nbsp;&nbsp; (C) Option C &nbsp;&nbsp;&nbsp;&nbsp; (D) Option D</div>
+                    """
+                    
+                    if paper_format == "CBSE Board Pattern":
+                        base_prompt = f"""
+                        Create a CBSE style question paper for topic '{topic}' ({subject}). Language: {lang_prompt}.
+                        Include the following question types: {types_str}. Total approx questions: {num_questions}.
+                        Structure it strictly like a CBSE Final Exam.
+                        CRITICAL INSTRUCTIONS: Use HTML <b> tags. Use HTML <sub> tags for chemistry.
+                        <b>General Instructions:</b><br>...<br><br>
+                        <b>SECTION A (Objective Type):</b> Include MCQs, Assertion-Reason, Fill in blanks (if selected).<br>
+                        <b>SECTION B (Short Answer Type):</b> 2-3 mark questions.<br>
+                        <b>SECTION C (Long Answer Type):</b> 5 mark questions.<br>
+                        Wrap each question in <div class='question-item'>...</div> for formatting.
+                        """
+                    elif paper_format == "BSEB (Bihar Board) Pattern":
+                        base_prompt = f"""
+                        Create a BSEB (Bihar Board) style question paper for topic '{topic}' ({subject}). Language: {lang_prompt}. Total approx questions: {num_questions}.
+                        Structure it strictly like a Bihar Board Exam.
+                        CRITICAL INSTRUCTIONS: Use HTML <b> tags. Use HTML <sub> tags for chemistry.
+                        <b>खण्ड-अ (वस्तुनिष्ठ प्रश्न / Objective Type):</b> 50% MCQs (Provide 4 options A, B, C, D for each).<br>
+                        <b>खण्ड-ब (विषयनिष्ठ प्रश्न / Subjective Type):</b> 50% Short and Long answer questions.<br>
+                        Include these types if selected: {types_str}.
+                        Wrap each question in <div class='question-item'>...</div>.
+                        """
+
+                    final_prompt = base_prompt + """
+                    \n\nAt the very end of the output, add exactly [[BREAK]] followed by the Answer Key for ALL objective and subjective questions.
+                    """
+                    response = smart_model.generate_content(final_prompt)
+                    ai_text_final = response.text
+                    details = {"Exam Name": exam_name, "Subject": subject, "Topic": topic, "Time": time_limit, "Marks": max_marks}
+                    final_manual_text = st.session_state.manual_text_content
+                    final_manual_images = st.session_state.manual_uploaded_images
+                    final_html = create_html_paper(ai_text_final, final_manual_text, final_manual_images, coaching_name, get_image_base64(final_logo), details, paper_format)
+                    timestamp = datetime.now().strftime("%I:%M %p")
+                    st.session_
