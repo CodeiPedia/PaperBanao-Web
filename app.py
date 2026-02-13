@@ -194,7 +194,6 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("📚 Exam Details")
     
-    # CASE 1, 2, 3, 4: Logic Handling in inputs
     exam_name = st.text_input("Exam Name (e.g., Class 12, RRB, SSC):", value="Class 10 Board")
     subject = st.text_input("Subject (Leave EMPTY for All Subjects Mock Test):", value="Science")
     topic = st.text_input("Topic (Leave EMPTY for Full Syllabus):", value="Light and Reflection")
@@ -203,10 +202,13 @@ with st.sidebar:
     with col1: time_limit = st.text_input("Time:", value="3 Hours")
     with col2: max_marks = st.text_input("Marks:", value="100")
     
-    st.markdown("---")
-    st.subheader("📝 Question Quantity (Case No. 5)")
+    # --- 🌟 NEW: DIFFICULTY LEVEL ---
+    difficulty = st.selectbox("Select Difficulty Level:", ["Easy", "Medium", "Hard"])
+    # --------------------------------
     
-    # CASE 5: Manual Entry for each type
+    st.markdown("---")
+    st.subheader("📝 Question Quantity")
+    
     col_q1, col_q2 = st.columns(2)
     with col_q1:
         num_mcq = st.number_input("No. of MCQs:", min_value=0, value=10)
@@ -275,9 +277,8 @@ if btn_final:
                 smart_model = get_working_model(api_key)
                 lang_prompt = "HINDI (Use authentic Hindi terminology)" if "Hindi" in language else "ENGLISH"
 
-                # --- 🧠 INTELLIGENT PROMPT BUILDING (Case 1, 2, 3, 4) ---
+                # --- 🧠 INTELLIGENT PROMPT BUILDING ---
                 
-                # Check what user entered
                 has_exam = bool(exam_name.strip())
                 has_subject = bool(subject.strip())
                 has_topic = bool(topic.strip())
@@ -286,25 +287,30 @@ if btn_final:
                 display_topic = "Full Syllabus"
 
                 if has_exam and has_subject and has_topic:
-                    # Case 1 & 2: Specific Exam -> Specific Subject -> Specific Topic
                     scope_instruction = f"Strictly focus on Topic '{topic}' from Subject '{subject}' for Exam '{exam_name}'. Do not ask outside this topic."
                     display_topic = topic
                 
                 elif has_exam and has_subject and not has_topic:
-                    # Case 3: Specific Exam -> Specific Subject -> Full Syllabus
                     scope_instruction = f"Create a FULL SYLLABUS paper for Subject '{subject}' relevant to Exam '{exam_name}'. Cover all important chapters of this subject."
                     display_topic = f"Full Syllabus ({subject})"
 
                 elif has_exam and not has_subject:
-                    # Case 4: Specific Exam -> All Subjects (Full Mock Test)
                     scope_instruction = f"Create a FULL MOCK TEST for Exam '{exam_name}'. Include questions from ALL standard subjects (e.g. Math, Reasoning, GK, English etc) that appear in {exam_name}."
                     display_topic = "Full Mock Test (All Subjects)"
                 
                 else:
-                    # Fallback
                     scope_instruction = f"Create a generic test paper for {subject if has_subject else 'General Knowledge'}."
 
-                # --- QUANTITY INSTRUCTION (Case 5) ---
+                # --- 🌟 DIFFICULTY LOGIC ---
+                diff_prompt = ""
+                if difficulty == "Easy":
+                    diff_prompt = "Questions should be DIRECT, Simple definitions, and basic formula based. Avoid complex twisting."
+                elif difficulty == "Medium":
+                    diff_prompt = "Questions should be moderate. Test conceptual understanding. Balance between easy and hard."
+                else: # Hard
+                    diff_prompt = "Questions should be CHALLENGING. Focus on in-depth application, multi-step problems, and high-level reasoning (JEE/NEET/Advanced style)."
+                # ---------------------------
+
                 qty_instruction = f"""
                 You must generate EXACTLY:
                 - {num_mcq} Multiple Choice Questions (MCQs)
@@ -319,6 +325,7 @@ if btn_final:
                 Language: {lang_prompt}
                 
                 SCOPE: {scope_instruction}
+                DIFFICULTY LEVEL: {difficulty} - {diff_prompt}
                 
                 QUANTITY: {qty_instruction}
 
@@ -333,8 +340,6 @@ if btn_final:
                 - Subjective: <div class='question-item'><b>Q. Question?</b><br><br></div>
                 """
                 
-                # Board specific instructions can be appended if selected, 
-                # but "Standard Custom" works best for this flexible logic.
                 if paper_format == "CBSE Board Pattern":
                     base_prompt += "\nTry to follow CBSE question phrasing style where possible."
                 elif paper_format == "BSEB (Bihar Board) Pattern":
