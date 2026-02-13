@@ -211,4 +211,159 @@ with st.sidebar:
         
         st.markdown(f"""
         <div class="premium-box">
-            <h3 style="margin:0; color:#B8860B;">🔒 Free
+            <h3 style="margin:0; color:#B8860B;">🔒 Free Mode Active</h3>
+            <p style="font-size:12px;">Free limit: 5 Questions Only.</p>
+            <a href="{PAYMENT_LINK}" target="_blank">
+                <button style="background-color:#28a745; color:white; border:none; padding:8px 15px; border-radius:5px; cursor:pointer;">
+                    Buy Premium Access
+                </button>
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.success("💎 Premium Plan Active (Unlimited Access)")
+    # ---------------------------------------
+
+    st.markdown("---")
+    coaching_name = st.text_input("Institute Name:", value="Maa Sarswati Coaching Center")
+    uploaded_logo = st.file_uploader("Upload Institute Logo", type=['png', 'jpg'])
+    final_logo = uploaded_logo 
+    
+    exam_name = st.text_input("Exam Name:", value="Final Board Exam")
+    subject = st.text_input("Subject:", value="Biology")
+    topic = st.text_input("Topic:", value="Life Processes")
+    col1, col2 = st.columns(2)
+    with col1: time_limit = st.text_input("Time:", value="3 Hours")
+    with col2: max_marks = st.text_input("Marks:", value="50")
+    
+    st.markdown("---")
+    paper_format = st.selectbox("Format Type:", ["Coaching Style (2-Column PDF Style)", "CBSE Board Pattern", "BSEB (Bihar Board) Pattern", "Standard Custom"])
+    st.markdown("**Question Types to Include:**")
+    q_mcq = st.checkbox("Multiple Choice (MCQs)", value=True)
+    q_tf = st.checkbox("True / False", value=False)
+    q_fib = st.checkbox("Fill in the Blanks", value=False)
+    q_subj = st.checkbox("Subjective (Short/Long Qs)", value=False)
+
+    # --- 🔒 LOCK THE QUESTION LIMIT ---
+    if st.session_state.is_premium:
+        max_q_limit = 150
+        default_q = 20
+        help_text = "Premium Unlocked: Go up to 150!"
+    else:
+        max_q_limit = 5
+        default_q = 5
+        help_text = "🔒 Free Version Limit. Buy Premium to unlock 150."
+    
+    num_questions = st.number_input("Number of Questions:", min_value=1, max_value=max_q_limit, value=default_q, step=1, help=help_text)
+    
+    if not st.session_state.is_premium and num_questions >= 5:
+        st.caption("🔒 Limit reached. Enter Premium Code to increase.")
+    # ----------------------------------
+
+    language = st.radio("Language:", ["Hindi", "English", "Bilingual"])
+    st.markdown("---")
+    st.subheader("2️⃣ Diagram Questions")
+    with st.expander("✨ Generate from Diagram", expanded=False):
+        diagram_img_upload = st.file_uploader("Upload Diagram:", type=['png', 'jpg', 'jpeg'], key="dia_up")
+        if diagram_img_upload:
+            st.image(diagram_img_upload, caption="Preview", use_column_width=True)
+            diagram_prompt = st.text_input("Instruction:", key="dia_p")
+            if st.button("Generate Question"):
+                if not api_key: st.error("❌ API Key Required.")
+                else:
+                    with st.spinner("AI Looking..."):
+                        try:
+                            smart_model = get_working_model(api_key)
+                            img_pil = Image.open(diagram_img_upload)
+                            lang_hint = "in HINDI" if "Hindi" in language else "in ENGLISH"
+                            full_prompt = [f"Create 1 MCQ {lang_hint}. Instruction: {diagram_prompt}. Format: Question text, then (A)..(B)..(C)..(D).. (All on one line separated by spaces)", img_pil]
+                            response = smart_model.generate_content(full_prompt)
+                            sep = "\n\n" if st.session_state.manual_text_content else ""
+                            st.session_state.manual_text_content += sep + response.text.strip()
+                            st.session_state.manual_uploaded_images.append(diagram_img_upload)
+                            st.success("Added!")
+                            st.rerun()
+                        except Exception as e: st.error(f"Error: {e}")
+
+    st.markdown("---")
+    with st.expander("3️⃣ Review / Edit Manual"):
+        manual_text = st.text_area("Editor", value=st.session_state.manual_text_content, height=200)
+        st.session_state.manual_text_content = manual_text
+        if st.button("Clear All"):
+            st.session_state.manual_text_content = ""
+            st.session_state.manual_uploaded_images = []
+            st.rerun()
+
+    btn_final = st.button("🚀 Generate Final Paper", type="primary")
+
+    st.markdown("---")
+    st.markdown("### 📜 Session History")
+    if len(st.session_state.paper_history) > 0:
+        for idx, item in enumerate(reversed(st.session_state.paper_history)):
+            with st.expander(f"{item['time']} - {item['format']}"):
+                st.download_button(label="📥 Download Again", data=item['html'], file_name=item['file_name'], mime="text/html", key=f"hist_btn_{idx}")
+
+# --- 5. MAIN LOGIC ---
+if btn_final:
+    if not api_key:
+        st.error("⚠️ Please enter your API Key in the sidebar first!")
+    else:
+        if num_questions > 0:
+            with st.spinner(f'Generating {paper_format} Paper...'):
+                try:
+                    smart_model = get_working_model(api_key)
+                    lang_prompt = "HINDI (Use authentic Hindi terminology)" if "Hindi" in language else "ENGLISH"
+                    types_list = []
+                    if q_mcq: types_list.append("MCQs")
+                    if q_tf: types_list.append("True/False")
+                    if q_fib: types_list.append("Fill in the Blanks")
+                    if q_subj: types_list.append("Subjective (Short and Long Answer questions)")
+                    types_str = ", ".join(types_list) if types_list else "MCQs"
+
+                    base_prompt = f"""
+                    Create a Test Paper for topic '{topic}' ({subject}). Language: {lang_prompt}. Total Questions: {num_questions}.
+                    Include ONLY these selected question types: {types_str}.
+                    CRITICAL INSTRUCTIONS: 
+                    1. DO NOT USE markdown asterisks (**) for bold text. Use HTML <b> tags.
+                    2. DO NOT USE LaTeX or `$` signs for chemical formulas. Use HTML <sub> tags strictly (e.g., C<sub>6</sub>H<sub>12</sub>O<sub>6</sub>).
+                    Format guidelines for MCQs: 
+                    <div class='question-item'><b>Q1. Question Text Here?</b><br>(A) Option A &nbsp;&nbsp;&nbsp;&nbsp; (B) Option B &nbsp;&nbsp;&nbsp;&nbsp; (C) Option C &nbsp;&nbsp;&nbsp;&nbsp; (D) Option D</div>
+                    """
+                    
+                    if paper_format == "CBSE Board Pattern":
+                        base_prompt = f"""
+                        Create a CBSE style question paper for topic '{topic}' ({subject}). Language: {lang_prompt}.
+                        Include the following question types: {types_str}. Total approx questions: {num_questions}.
+                        Structure it strictly like a CBSE Final Exam.
+                        CRITICAL INSTRUCTIONS: Use HTML <b> tags. Use HTML <sub> tags for chemistry.
+                        <b>General Instructions:</b><br>...<br><br>
+                        <b>SECTION A (Objective Type):</b> Include MCQs, Assertion-Reason, Fill in blanks (if selected).<br>
+                        <b>SECTION B (Short Answer Type):</b> 2-3 mark questions.<br>
+                        <b>SECTION C (Long Answer Type):</b> 5 mark questions.<br>
+                        Wrap each question in <div class='question-item'>...</div> for formatting.
+                        """
+                    elif paper_format == "BSEB (Bihar Board) Pattern":
+                        base_prompt = f"""
+                        Create a BSEB (Bihar Board) style question paper for topic '{topic}' ({subject}). Language: {lang_prompt}. Total approx questions: {num_questions}.
+                        Structure it strictly like a Bihar Board Exam.
+                        CRITICAL INSTRUCTIONS: Use HTML <b> tags. Use HTML <sub> tags for chemistry.
+                        <b>खण्ड-अ (वस्तुनिष्ठ प्रश्न / Objective Type):</b> 50% MCQs (Provide 4 options A, B, C, D for each).<br>
+                        <b>खण्ड-ब (विषयनिष्ठ प्रश्न / Subjective Type):</b> 50% Short and Long answer questions.<br>
+                        Include these types if selected: {types_str}.
+                        Wrap each question in <div class='question-item'>...</div>.
+                        """
+
+                    final_prompt = base_prompt + """
+                    \n\nAt the very end of the output, add exactly [[BREAK]] followed by the Answer Key for ALL objective and subjective questions.
+                    """
+                    response = smart_model.generate_content(final_prompt)
+                    ai_text_final = response.text
+                    details = {"Exam Name": exam_name, "Subject": subject, "Topic": topic, "Time": time_limit, "Marks": max_marks}
+                    final_manual_text = st.session_state.manual_text_content
+                    final_manual_images = st.session_state.manual_uploaded_images
+                    final_html = create_html_paper(ai_text_final, final_manual_text, final_manual_images, coaching_name, get_image_base64(final_logo), details, paper_format)
+                    timestamp = datetime.now().strftime("%I:%M %p")
+                    st.session_state.paper_history.append({"time": timestamp, "topic": topic, "subject": subject, "format": paper_format, "html": final_html, "file_name": f"{subject}_{paper_format}.html"})
+                    st.balloons()
+                    st.download_button("📥 Download HTML", final_html, f"paper_{paper_format}.html", "text/html")
+                except Exception as e: st.error(f"❌ AI Error (Please check your API Key / Network): {e}")
