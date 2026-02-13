@@ -105,7 +105,6 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
     if paper_format == "Coaching Style (2-Column PDF Style)":
         content_class = "content-2-column"
 
-    # --- 🌟 FIXED CSS FOR A4 PRINTING ---
     html_content = f"""
     <!DOCTYPE html>
     <html>
@@ -114,63 +113,45 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
         <title>{details_dict['Topic']}</title>
         <link href='https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari&family=Roboto&display=swap' rel='stylesheet'>
         <style>
-            /* A4 SIZE FIX */
             @page {{
                 size: A4;
-                margin: 10mm; /* Narrow margins for print */
+                margin: 10mm;
             }}
             @media print {{
-                html, body {{
-                    width: 210mm;
-                    height: 297mm;
-                    margin: 0;
-                    padding: 0;
-                }}
-                .main-container {{
-                    border: 2px solid #000 !important;
-                    width: 100% !important;
-                    max-width: 100% !important;
-                    padding: 10px !important;
-                    margin: 0 !important;
-                    box-shadow: none !important;
-                }}
+                html, body {{ width: 210mm; height: 297mm; }}
+                .main-container {{ border: 2px solid #000 !important; width: 100% !important; margin: 0 !important; box-shadow: none !important; }}
                 .page-break {{ page-break-before: always !important; display: block; }}
                 body {{ -webkit-print-color-adjust: exact; }}
             }}
-            
-            body {{ 
-                font-family: 'Roboto', sans-serif; 
-                padding: 20px; 
-                background: #f0f0f0; /* Grey background on screen only */
-            }}
-            
+            body {{ font-family: 'Roboto', sans-serif; padding: 20px; background: #f0f0f0; }}
             .main-container {{ 
-                border: 2px solid #000; 
-                padding: 25px; 
-                background: white; 
-                width: 100%;
-                max-width: 210mm; /* A4 width */
-                margin: 0 auto; 
-                box-sizing: border-box;
-                min-height: 290mm;
+                border: 2px solid #000; padding: 25px; background: white; 
+                width: 100%; max-width: 210mm; margin: 0 auto; box-sizing: border-box; min-height: 290mm;
             }}
-
             .answer-container {{ border: 2px dashed #444; padding: 30px; margin-top: 50px; background: #fff; page-break-before: always; }}
             .header-container {{ display: flex; align-items: center; border-bottom: 2px double #000; padding-bottom: 10px; margin-bottom: 15px; }}
             .logo {{ max-width: 80px; max-height: 80px; margin-right: 20px; }}
             .header-text {{ flex-grow: 1; text-align: center; }}
             .header-text h1 {{ margin: 0; font-size: 26px; text-transform: uppercase; color: #000; }}
             .header-text p {{ margin: 2px 0; font-size: 14px; font-weight: bold; }}
-            
             .info-table {{ width: 100%; margin-top: 10px; border-collapse: collapse; margin-bottom: 15px; }}
             .info-table td {{ padding: 5px; font-weight: bold; border: 1px solid #000; font-size: 13px; }}
-            
             .content-2-column {{ column-count: 2; column-gap: 30px; column-rule: 1px solid #ccc; text-align: justify; }}
             .content-standard {{ column-count: 1; text-align: justify; }}
             .question-item {{ break-inside: avoid-column; margin-bottom: 12px; font-size: 15px; }}
-            
             .footer {{ position: absolute; bottom: 5px; width: 100%; text-align: center; font-size: 10px; color: #555; left: 0; }}
-            .answer-key-grid {{ column-count: 4; column-gap: 20px; font-size: 14px; margin-top: 10px; }}
+            
+            /* --- 🌟 UPDATED ANSWER KEY STYLE (Detailed) --- */
+            .answer-key-grid {{ 
+                column-count: 2; /* 2 Columns for better readability of long answers */
+                column-gap: 40px; 
+                font-size: 13px; 
+                margin-top: 10px; 
+                text-align: left;
+            }}
+            .answer-item {{ margin-bottom: 15px; break-inside: avoid-column; }}
+            .ans-hint {{ color: #666; font-style: italic; font-size: 12px; display: block; margin-top: 2px; }}
+            .ans-detail {{ color: #000; display: block; margin-top: 4px; border-left: 2px solid #ddd; padding-left: 8px; }}
         </style>
     </head>
     <body>
@@ -184,7 +165,18 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
             <div class='{content_class}'>{final_questions_body}</div>
             <div class='footer'>Created by PaperBanao.ai</div>
         </div>
-        {f'''<div class='answer-container'><div class='header'><h2 style='text-align:center; margin-bottom:0;'>Answer Key</h2><p style='text-align:center; color:#666;'>{details_dict['Subject']} - {details_dict['Topic']}</p><hr></div><div class='answer-key-grid'>{ai_answers}</div></div>''' if ai_answers else ''}
+        {f'''
+        <div class='answer-container'>
+            <div class='header'>
+                <h2 style='text-align:center; margin-bottom:0;'>Detailed Solutions & Hints</h2>
+                <p style='text-align:center; color:#666;'>{details_dict['Subject']} - {details_dict['Topic']}</p>
+                <hr>
+            </div>
+            <div class='answer-key-grid'>
+                {ai_answers}
+            </div>
+        </div>
+        ''' if ai_answers else ''}
     </body>
     </html>
     """
@@ -241,180 +233,11 @@ with st.sidebar:
     with col1: time_limit = st.text_input("Time:", value="3 Hours")
     with col2: max_marks = st.text_input("Marks:", value="100")
     
-    # --- INDIVIDUAL QUESTION CONTROL ---
     st.markdown("---")
     st.subheader("📝 Questions & Difficulty")
     st.caption("Select Qty & Difficulty Mix (Easy, Medium, Hard)")
 
-    # 1. MCQ Section
     with st.container():
         st.markdown("**1. Multiple Choice (MCQs)**")
         c1, c2 = st.columns([1, 2])
-        num_mcq = c1.number_input("Qty:", min_value=0, value=10, key="n_mcq")
-        diff_mcq = c2.multiselect("Difficulty:", ["Easy", "Medium", "Hard"], default=["Medium"], key="d_mcq")
-    
-    # 2. Fill in Blanks Section
-    with st.container():
-        st.markdown("**2. Fill in the Blanks**")
-        c1, c2 = st.columns([1, 2])
-        num_fib = c1.number_input("Qty:", min_value=0, value=5, key="n_fib")
-        diff_fib = c2.multiselect("Difficulty:", ["Easy", "Medium", "Hard"], default=["Easy", "Medium"], key="d_fib")
-
-    # 3. True False Section
-    with st.container():
-        st.markdown("**3. True / False**")
-        c1, c2 = st.columns([1, 2])
-        num_tf = c1.number_input("Qty:", min_value=0, value=5, key="n_tf")
-        diff_tf = c2.multiselect("Difficulty:", ["Easy", "Medium", "Hard"], default=["Easy"], key="d_tf")
-
-    # 4. Subjective Section
-    with st.container():
-        st.markdown("**4. Subjective (Short/Long)**")
-        c1, c2 = st.columns([1, 2])
-        num_subj = c1.number_input("Qty:", min_value=0, value=3, key="n_subj")
-        diff_subj = c2.multiselect("Difficulty:", ["Easy", "Medium", "Hard"], default=["Medium", "Hard"], key="d_subj")
-
-    total_q = num_mcq + num_fib + num_tf + num_subj
-    st.info(f"📊 Total Questions: {total_q}")
-    # ------------------------------------------------
-
-    paper_format = st.selectbox("Format Type:", ["Coaching Style (2-Column PDF Style)", "CBSE Board Pattern", "BSEB (Bihar Board) Pattern", "Standard Custom"])
-    language = st.radio("Language:", ["Hindi", "English", "Bilingual"])
-    
-    st.markdown("---")
-    st.subheader("2️⃣ Diagram Questions")
-    with st.expander("✨ Generate from Diagram", expanded=False):
-        diagram_img_upload = st.file_uploader("Upload Diagram:", type=['png', 'jpg', 'jpeg'], key="dia_up")
-        if diagram_img_upload:
-            st.image(diagram_img_upload, caption="Preview", use_column_width=True)
-            diagram_prompt = st.text_input("Instruction:", key="dia_p")
-            if st.button("Generate Question"):
-                if not api_key: st.error("❌ API Key Required.")
-                else:
-                    with st.spinner("AI Looking..."):
-                        try:
-                            smart_model = get_working_model(api_key)
-                            img_pil = Image.open(diagram_img_upload)
-                            lang_hint = "in HINDI" if "Hindi" in language else "in ENGLISH"
-                            full_prompt = [f"Create 1 MCQ {lang_hint}. Instruction: {diagram_prompt}. Format: Question text, then (A)..(B)..(C)..(D).. (All on one line separated by spaces)", img_pil]
-                            response = smart_model.generate_content(full_prompt)
-                            sep = "\n\n" if st.session_state.manual_text_content else ""
-                            st.session_state.manual_text_content += sep + response.text.strip()
-                            st.session_state.manual_uploaded_images.append(diagram_img_upload)
-                            st.success("Added!")
-                            st.rerun()
-                        except Exception as e: st.error(f"Error: {e}")
-
-    st.markdown("---")
-    with st.expander("3️⃣ Review / Edit Manual"):
-        manual_text = st.text_area("Editor", value=st.session_state.manual_text_content, height=200)
-        st.session_state.manual_text_content = manual_text
-        if st.button("Clear All"):
-            st.session_state.manual_text_content = ""
-            st.session_state.manual_uploaded_images = []
-            st.rerun()
-
-    btn_final = st.button("🚀 Generate Final Paper", type="primary")
-
-    st.markdown("---")
-    st.markdown("### 📜 Session History")
-    if len(st.session_state.paper_history) > 0:
-        for idx, item in enumerate(reversed(st.session_state.paper_history)):
-            with st.expander(f"{item['time']} - {item['format']}"):
-                st.download_button(label="📥 Download Again", data=item['html'], file_name=item['file_name'], mime="text/html", key=f"hist_btn_{idx}")
-
-# --- 6. MAIN LOGIC ---
-if btn_final:
-    if not api_key:
-        st.error("⚠️ Please enter your API Key in the sidebar first!")
-    elif total_q == 0:
-        st.error("⚠️ Please select at least one question.")
-    else:
-        with st.spinner(f'Generating {exam_name} Paper...'):
-            try:
-                smart_model = get_working_model(api_key)
-                lang_prompt = "HINDI (Use authentic Hindi terminology)" if "Hindi" in language else "ENGLISH"
-
-                # --- 🧠 INTELLIGENT PROMPT BUILDING ---
-                has_exam = bool(exam_name.strip())
-                has_subject = bool(subject.strip())
-                has_topic = bool(topic.strip())
-
-                scope_instruction = ""
-                display_topic = "Full Syllabus"
-
-                if has_exam and has_subject and has_topic:
-                    scope_instruction = f"Strictly focus on Topic '{topic}' from Subject '{subject}' for Exam '{exam_name}'."
-                    display_topic = topic
-                elif has_exam and has_subject and not has_topic:
-                    scope_instruction = f"Create a FULL SYLLABUS paper for Subject '{subject}' relevant to Exam '{exam_name}'."
-                    display_topic = f"Full Syllabus ({subject})"
-                elif has_exam and not has_subject:
-                    scope_instruction = f"Create a FULL MOCK TEST for Exam '{exam_name}' (Include All Subjects)."
-                    display_topic = "Full Mock Test (All Subjects)"
-                else:
-                    scope_instruction = f"Create a generic test paper for {subject if has_subject else 'General Knowledge'}."
-
-                # --- DIFFICULTY MIX LOGIC ---
-                def get_diff_str(diff_list):
-                    return ", ".join(diff_list) if diff_list else "Mixed (Easy, Medium, Hard)"
-
-                qty_instruction = f"""
-                You must generate EXACTLY the following structure:
-                1. {num_mcq} MCQs. Difficulty Mix: {get_diff_str(diff_mcq)}.
-                2. {num_fib} Fill in Blanks. Difficulty Mix: {get_diff_str(diff_fib)}.
-                3. {num_tf} True / False. Difficulty Mix: {get_diff_str(diff_tf)}.
-                4. {num_subj} Subjective (Short/Long). Difficulty Mix: {get_diff_str(diff_subj)}.
-                
-                Total Questions: {total_q}.
-                """
-
-                base_prompt = f"""
-                You are an expert exam setter.
-                Language: {lang_prompt}
-                
-                SCOPE: {scope_instruction}
-                
-                STRUCTURE REQUEST: {qty_instruction}
-
-                CRITICAL RULES: 
-                1. Follow the Difficulty Mix STRICTLY for each section. 
-                   - Easy: Direct/Basic. 
-                   - Medium: Conceptual. 
-                   - Hard: Complex/Application based.
-                2. DO NOT USE markdown asterisks (**) for bold text. Use HTML <b> tags.
-                3. DO NOT USE LaTeX or `$` signs. Use HTML <sub> tags strictly (e.g., C<sub>6</sub>H<sub>12</sub>O<sub>6</sub>).
-                
-                FORMATTING:
-                - MCQs: <div class='question-item'><b>Q. Question?</b><br>(A) .. (B) .. (C) .. (D) ..</div>
-                - True/False: <div class='question-item'><b>Q. Question?</b> (True/False)</div>
-                - Fill in Blanks: <div class='question-item'><b>Q. Question with ______ ?</b></div>
-                - Subjective: <div class='question-item'><b>Q. Question?</b><br><br></div>
-                """
-                
-                if paper_format == "CBSE Board Pattern":
-                    base_prompt += "\nFollow CBSE style phrasing."
-                elif paper_format == "BSEB (Bihar Board) Pattern":
-                    base_prompt += "\nFollow Bihar Board style phrasing."
-
-                final_prompt = base_prompt + """
-                \n\nAt the very end of the output, add exactly [[BREAK]] followed by the Answer Key for ALL objective questions.
-                """
-                
-                response = smart_model.generate_content(final_prompt)
-                ai_text_final = response.text
-                
-                # Update details for header
-                final_sub_display = subject if has_subject else "All Subjects"
-                details = {"Exam Name": exam_name, "Subject": final_sub_display, "Topic": display_topic, "Time": time_limit, "Marks": max_marks}
-                
-                final_manual_text = st.session_state.manual_text_content
-                final_manual_images = st.session_state.manual_uploaded_images
-                final_html = create_html_paper(ai_text_final, final_manual_text, final_manual_images, coaching_name, get_image_base64(final_logo), details, paper_format)
-                
-                timestamp = datetime.now().strftime("%I:%M %p")
-                st.session_state.paper_history.append({"time": timestamp, "topic": display_topic, "subject": final_sub_display, "format": paper_format, "html": final_html, "file_name": f"{final_sub_display}_paper.html"})
-                
-                st.balloons()
-                st.download_button("📥 Download HTML", final_html, f"paper_{exam_name}.html", "text/html")
-            except Exception as e: st.error(f"❌ AI Error: {e}")
+        num_mcq = c1.number_input("Qty:", min_value=0, value=10, key="n_mc
