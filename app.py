@@ -312,4 +312,7 @@ if btn_final:
                     final_manual_images = st.session_state.manual_uploaded_images
                     final_html = create_html_paper(ai_text_final, final_manual_text, final_manual_images, coaching_name, get_image_base64(final_logo), details, paper_format)
                     timestamp = datetime.now().strftime("%I:%M %p")
-                    st.session_
+                    st.session_state.paper_history.append({"time": timestamp, "topic": topic, "subject": subject, "format": paper_format, "html": final_html, "file_name": f"{subject}_{paper_format}.html"})
+                    st.balloons()
+                    st.download_button("📥 Download HTML", final_html, f"paper_{paper_format}.html", "text/html")
+                except Exception as e: st.error(f"❌ AI Error (Please check your API Key / Network): {e}")
