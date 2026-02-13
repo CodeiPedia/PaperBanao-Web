@@ -7,7 +7,7 @@ import re
 from PIL import Image
 from datetime import datetime
 
-# --- 1. PAGE CONFIGURATION (MUST BE FIRST) ---
+# --- 1. PAGE CONFIGURATION ---
 st.set_page_config(page_title="PaperBanao.ai", page_icon="📄", layout="wide")
 
 # --- 2. SESSION STATE SETUP ---
@@ -191,24 +191,36 @@ with st.sidebar:
     uploaded_logo = st.file_uploader("Upload Institute Logo", type=['png', 'jpg'])
     final_logo = uploaded_logo 
     
-    exam_name = st.text_input("Exam Name:", value="Final Board Exam")
-    subject = st.text_input("Subject:", value="Biology")
-    topic = st.text_input("Topic:", value="Life Processes")
+    st.markdown("---")
+    st.subheader("📚 Exam Details")
+    
+    # CASE 1, 2, 3, 4: Logic Handling in inputs
+    exam_name = st.text_input("Exam Name (e.g., Class 12, RRB, SSC):", value="Class 10 Board")
+    subject = st.text_input("Subject (Leave EMPTY for All Subjects Mock Test):", value="Science")
+    topic = st.text_input("Topic (Leave EMPTY for Full Syllabus):", value="Light and Reflection")
+    
     col1, col2 = st.columns(2)
     with col1: time_limit = st.text_input("Time:", value="3 Hours")
-    with col2: max_marks = st.text_input("Marks:", value="50")
+    with col2: max_marks = st.text_input("Marks:", value="100")
     
     st.markdown("---")
+    st.subheader("📝 Question Quantity (Case No. 5)")
+    
+    # CASE 5: Manual Entry for each type
+    col_q1, col_q2 = st.columns(2)
+    with col_q1:
+        num_mcq = st.number_input("No. of MCQs:", min_value=0, value=10)
+        num_fib = st.number_input("No. of Fill in Blanks:", min_value=0, value=5)
+    with col_q2:
+        num_tf = st.number_input("No. of True/False:", min_value=0, value=5)
+        num_subj = st.number_input("No. of Short/Long Qs:", min_value=0, value=3)
+
+    total_q = num_mcq + num_fib + num_tf + num_subj
+    st.caption(f"Total Questions: {total_q}")
+
     paper_format = st.selectbox("Format Type:", ["Coaching Style (2-Column PDF Style)", "CBSE Board Pattern", "BSEB (Bihar Board) Pattern", "Standard Custom"])
-    st.markdown("**Question Types to Include:**")
-    q_mcq = st.checkbox("Multiple Choice (MCQs)", value=True)
-    q_tf = st.checkbox("True / False", value=False)
-    q_fib = st.checkbox("Fill in the Blanks", value=False)
-    q_subj = st.checkbox("Subjective (Short/Long Qs)", value=False)
-
-    num_questions = st.number_input("Number of Questions:", min_value=1, max_value=150, value=20, step=1)
-
     language = st.radio("Language:", ["Hindi", "English", "Bilingual"])
+    
     st.markdown("---")
     st.subheader("2️⃣ Diagram Questions")
     with st.expander("✨ Generate from Diagram", expanded=False):
@@ -255,84 +267,97 @@ with st.sidebar:
 if btn_final:
     if not api_key:
         st.error("⚠️ Please enter your API Key in the sidebar first!")
+    elif total_q == 0:
+        st.error("⚠️ Please select at least one question (MCQ, T/F etc).")
     else:
-        if num_questions > 0:
-            with st.spinner(f'Generating {paper_format} Paper...'):
-                try:
-                    smart_model = get_working_model(api_key)
-                    lang_prompt = "HINDI (Use authentic Hindi terminology)" if "Hindi" in language else "ENGLISH"
-                    
-                    types_list = []
-                    if q_mcq: types_list.append("MCQs")
-                    if q_tf: types_list.append("True/False")
-                    if q_fib: types_list.append("Fill in the Blanks")
-                    if q_subj: types_list.append("Subjective (Short and Long Answer questions)")
-                    types_str = ", ".join(types_list) if types_list else "MCQs"
+        with st.spinner(f'Generating {exam_name} Paper...'):
+            try:
+                smart_model = get_working_model(api_key)
+                lang_prompt = "HINDI (Use authentic Hindi terminology)" if "Hindi" in language else "ENGLISH"
 
-                    # --- 🌟 LOGIC FIX: Handle "All" Topic ---
-                    # If topic is "All", we explicitly say "Complete Syllabus of {subject}"
-                    if topic.lower() in ["all", "any", "full", "full syllabus"]:
-                        final_topic_prompt = f"COMPLETE SYLLABUS of {subject}"
-                    else:
-                        final_topic_prompt = topic
+                # --- 🧠 INTELLIGENT PROMPT BUILDING (Case 1, 2, 3, 4) ---
+                
+                # Check what user entered
+                has_exam = bool(exam_name.strip())
+                has_subject = bool(subject.strip())
+                has_topic = bool(topic.strip())
 
-                    # --- 🔒 STRICT PROMPT ---
-                    common_instructions = f"""
-                    You are an expert exam setter.
-                    Subject: {subject}
-                    Topic: {final_topic_prompt}
-                    Language: {lang_prompt}
-                    
-                    CRITICAL INSTRUCTION (DO NOT IGNORE):
-                    1. STRICTLY generate questions ONLY for the subject '{subject}'. 
-                    2. Even if the Exam Name implies a stream (like 'Arts' or 'Science'), DO NOT ask questions from other subjects. 
-                       - If Subject is 'Hindi', ask ONLY Hindi questions.
-                       - If Subject is 'Math', ask ONLY Math questions.
-                    3. Do NOT use Markdown bold (**). Use HTML <b> tags.
-                    4. Do NOT use LaTeX/$. Use HTML <sub> tags for formulas (e.g. H<sub>2</sub>O).
-                    """
+                scope_instruction = ""
+                display_topic = "Full Syllabus"
 
-                    if paper_format == "CBSE Board Pattern":
-                        base_prompt = f"""
-                        {common_instructions}
-                        Create a CBSE style question paper. Total Questions: {num_questions}.
-                        Structure:
-                        <b>General Instructions:</b><br>...<br><br>
-                        <b>SECTION A (Objective):</b> MCQs, Assertion-Reason.<br>
-                        <b>SECTION B (Short):</b> 2-3 mark Qs.<br>
-                        <b>SECTION C (Long):</b> 5 mark Qs.<br>
-                        Wrap questions in <div class='question-item'>...</div>.
-                        """
-                    elif paper_format == "BSEB (Bihar Board) Pattern":
-                        base_prompt = f"""
-                        {common_instructions}
-                        Create a BSEB (Bihar Board) style paper. Total Questions: {num_questions}.
-                        Structure:
-                        <b>खण्ड-अ (वस्तुनिष्ठ / Objective):</b> 50% MCQs.<br>
-                        <b>खण्ड-ब (विषयनिष्ठ / Subjective):</b> 50% Short/Long Qs.<br>
-                        Wrap questions in <div class='question-item'>...</div>.
-                        """
-                    else:
-                        base_prompt = f"""
-                        {common_instructions}
-                        Create a Test Paper. Total Questions: {num_questions}.
-                        Include: {types_str}.
-                        Format MCQs: <div class='question-item'><b>Q1. Text?</b><br>(A) Opt A &nbsp;&nbsp; (B) Opt B...</div>
-                        Format Subjective: <div class='question-item'><b>Qx. Text?</b><br><br></div>
-                        """
+                if has_exam and has_subject and has_topic:
+                    # Case 1 & 2: Specific Exam -> Specific Subject -> Specific Topic
+                    scope_instruction = f"Strictly focus on Topic '{topic}' from Subject '{subject}' for Exam '{exam_name}'. Do not ask outside this topic."
+                    display_topic = topic
+                
+                elif has_exam and has_subject and not has_topic:
+                    # Case 3: Specific Exam -> Specific Subject -> Full Syllabus
+                    scope_instruction = f"Create a FULL SYLLABUS paper for Subject '{subject}' relevant to Exam '{exam_name}'. Cover all important chapters of this subject."
+                    display_topic = f"Full Syllabus ({subject})"
 
-                    final_prompt = base_prompt + """
-                    \n\nAt the very end, add exactly [[BREAK]] followed by the Answer Key.
-                    """
-                    
-                    response = smart_model.generate_content(final_prompt)
-                    ai_text_final = response.text
-                    details = {"Exam Name": exam_name, "Subject": subject, "Topic": topic, "Time": time_limit, "Marks": max_marks}
-                    final_manual_text = st.session_state.manual_text_content
-                    final_manual_images = st.session_state.manual_uploaded_images
-                    final_html = create_html_paper(ai_text_final, final_manual_text, final_manual_images, coaching_name, get_image_base64(final_logo), details, paper_format)
-                    timestamp = datetime.now().strftime("%I:%M %p")
-                    st.session_state.paper_history.append({"time": timestamp, "topic": topic, "subject": subject, "format": paper_format, "html": final_html, "file_name": f"{subject}_{paper_format}.html"})
-                    st.balloons()
-                    st.download_button("📥 Download HTML", final_html, f"paper_{paper_format}.html", "text/html")
-                except Exception as e: st.error(f"❌ AI Error: {e}")
+                elif has_exam and not has_subject:
+                    # Case 4: Specific Exam -> All Subjects (Full Mock Test)
+                    scope_instruction = f"Create a FULL MOCK TEST for Exam '{exam_name}'. Include questions from ALL standard subjects (e.g. Math, Reasoning, GK, English etc) that appear in {exam_name}."
+                    display_topic = "Full Mock Test (All Subjects)"
+                
+                else:
+                    # Fallback
+                    scope_instruction = f"Create a generic test paper for {subject if has_subject else 'General Knowledge'}."
+
+                # --- QUANTITY INSTRUCTION (Case 5) ---
+                qty_instruction = f"""
+                You must generate EXACTLY:
+                - {num_mcq} Multiple Choice Questions (MCQs)
+                - {num_fib} Fill in the Blanks
+                - {num_tf} True / False
+                - {num_subj} Subjective (Short/Long) Questions
+                Total: {total_q} Questions.
+                """
+
+                base_prompt = f"""
+                You are an expert exam setter.
+                Language: {lang_prompt}
+                
+                SCOPE: {scope_instruction}
+                
+                QUANTITY: {qty_instruction}
+
+                CRITICAL RULES: 
+                1. DO NOT USE markdown asterisks (**) for bold text. Use HTML <b> tags.
+                2. DO NOT USE LaTeX or `$` signs for chemical formulas. Use HTML <sub> tags strictly (e.g., C<sub>6</sub>H<sub>12</sub>O<sub>6</sub>).
+                
+                FORMATTING:
+                - MCQs: <div class='question-item'><b>Q. Question?</b><br>(A) .. (B) .. (C) .. (D) ..</div>
+                - True/False: <div class='question-item'><b>Q. Question?</b> (True/False)</div>
+                - Fill in Blanks: <div class='question-item'><b>Q. Question with ______ ?</b></div>
+                - Subjective: <div class='question-item'><b>Q. Question?</b><br><br></div>
+                """
+                
+                # Board specific instructions can be appended if selected, 
+                # but "Standard Custom" works best for this flexible logic.
+                if paper_format == "CBSE Board Pattern":
+                    base_prompt += "\nTry to follow CBSE question phrasing style where possible."
+                elif paper_format == "BSEB (Bihar Board) Pattern":
+                    base_prompt += "\nTry to follow Bihar Board question phrasing style where possible."
+
+                final_prompt = base_prompt + """
+                \n\nAt the very end of the output, add exactly [[BREAK]] followed by the Answer Key for ALL objective questions.
+                """
+                
+                response = smart_model.generate_content(final_prompt)
+                ai_text_final = response.text
+                
+                # Update details for header
+                final_sub_display = subject if has_subject else "All Subjects"
+                details = {"Exam Name": exam_name, "Subject": final_sub_display, "Topic": display_topic, "Time": time_limit, "Marks": max_marks}
+                
+                final_manual_text = st.session_state.manual_text_content
+                final_manual_images = st.session_state.manual_uploaded_images
+                final_html = create_html_paper(ai_text_final, final_manual_text, final_manual_images, coaching_name, get_image_base64(final_logo), details, paper_format)
+                
+                timestamp = datetime.now().strftime("%I:%M %p")
+                st.session_state.paper_history.append({"time": timestamp, "topic": display_topic, "subject": final_sub_display, "format": paper_format, "html": final_html, "file_name": f"{final_sub_display}_paper.html"})
+                
+                st.balloons()
+                st.download_button("📥 Download HTML", final_html, f"paper_{exam_name}.html", "text/html")
+            except Exception as e: st.error(f"❌ AI Error: {e}")
