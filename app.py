@@ -7,14 +7,10 @@ import re
 from PIL import Image
 from datetime import datetime
 
-# --- 1. PAGE CONFIGURATION (MUST BE FIRST) ---
+# --- 1. CONFIGURATION (MUST BE THE VERY FIRST STREAMLIT COMMAND) ---
 st.set_page_config(page_title="PaperBanao.ai", page_icon="📄", layout="wide")
 
-# --- 🔒 SECURITY & SUBSCRIPTION SETUP ---
-VALID_ACCESS_CODES = ["VIP2026", "PATNA100", "TEACHER50", "DEMO123"] 
-PAYMENT_LINK = "https://rzp.io/l/YOUR_LINK_HERE"  # अपना लिंक यहाँ डालें
-
-# --- 0. SESSION STATE SETUP ---
+# --- 2. SESSION STATE INITIALIZATION ---
 if 'manual_text_content' not in st.session_state:
     st.session_state.manual_text_content = ""
 if 'manual_uploaded_images' not in st.session_state:
@@ -24,17 +20,20 @@ if 'paper_history' not in st.session_state:
 if 'is_premium' not in st.session_state:
     st.session_state.is_premium = False
 
-# --- 2. CUSTOM CSS ---
+# --- 3. CONSTANTS & SETUP ---
+VALID_ACCESS_CODES = ["VIP2026", "PATNA100", "TEACHER50", "DEMO123"] 
+PAYMENT_LINK = "https://rzp.io/l/YOUR_LINK_HERE" 
+
+# --- 4. CUSTOM CSS ---
 st.markdown("""
 <style>
     .stButton>button { background-color: #1E88E5; color: white; font-size: 18px; width: 100%; border-radius: 8px; }
     .premium-box { border: 2px solid #FFD700; background-color: #FFFBE6; padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 20px; }
     .diagram-box { border: 2px dashed #1E88E5; padding: 15px; border-radius: 10px; background-color: #f0f8ff; margin-bottom: 20px;}
-    .history-box { padding: 10px; border-bottom: 1px solid #ddd; margin-bottom: 5px; font-size: 14px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. HELPER FUNCTIONS ---
+# --- 5. HELPER FUNCTIONS ---
 def get_image_base64(image_input):
     if not image_input: return None
     try:
@@ -74,10 +73,8 @@ def process_manual_text_auto_number(text, start_num):
     return "<br><br>".join(formatted_html_parts)
 
 def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, details_dict, paper_format):
-    # Formatting Cleanups
     ai_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', ai_text)
     ai_text = re.sub(r'#{1,6}\s?', '', ai_text)
-    # Chemistry Fixes
     ai_text = re.sub(r'\$_\{([0-9a-zA-Z+-]+)\}\$', r'<sub>\1</sub>', ai_text)
     ai_text = re.sub(r'\$_([0-9a-zA-Z+-]+)\$', r'<sub>\1</sub>', ai_text)
     ai_text = re.sub(r'_\{([0-9a-zA-Z+-]+)\}', r'<sub>\1</sub>', ai_text)
@@ -171,7 +168,7 @@ def get_working_model(api_key):
     if best_model_name: return genai.GenerativeModel(best_model_name)
     else: raise Exception("No text generation models found in your Google account.")
 
-# --- 4. UI Setup ---
+# --- 6. UI SETUP ---
 if os.path.exists("logo.png"):
     logo_b64 = get_image_base64("logo.png")
     st.markdown(f"""
@@ -222,8 +219,7 @@ with st.sidebar:
         """, unsafe_allow_html=True)
     else:
         st.success("💎 Premium Plan Active (Unlimited Access)")
-    # ---------------------------------------
-
+    
     st.markdown("---")
     coaching_name = st.text_input("Institute Name:", value="Maa Sarswati Coaching Center")
     uploaded_logo = st.file_uploader("Upload Institute Logo", type=['png', 'jpg'])
@@ -244,7 +240,6 @@ with st.sidebar:
     q_fib = st.checkbox("Fill in the Blanks", value=False)
     q_subj = st.checkbox("Subjective (Short/Long Qs)", value=False)
 
-    # --- 🔒 LOCK THE QUESTION LIMIT ---
     if st.session_state.is_premium:
         max_q_limit = 150
         default_q = 20
@@ -258,7 +253,6 @@ with st.sidebar:
     
     if not st.session_state.is_premium and num_questions >= 5:
         st.caption("🔒 Limit reached. Enter Premium Code to increase.")
-    # ----------------------------------
 
     language = st.radio("Language:", ["Hindi", "English", "Bilingual"])
     st.markdown("---")
@@ -303,7 +297,7 @@ with st.sidebar:
             with st.expander(f"{item['time']} - {item['format']}"):
                 st.download_button(label="📥 Download Again", data=item['html'], file_name=item['file_name'], mime="text/html", key=f"hist_btn_{idx}")
 
-# --- 5. MAIN LOGIC ---
+# --- 7. MAIN LOGIC ---
 if btn_final:
     if not api_key:
         st.error("⚠️ Please enter your API Key in the sidebar first!")
