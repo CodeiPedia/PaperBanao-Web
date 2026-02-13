@@ -7,10 +7,10 @@ import re
 from PIL import Image
 from datetime import datetime
 
-# --- 1. CONFIGURATION (MUST BE THE VERY FIRST STREAMLIT COMMAND) ---
+# --- 1. PAGE CONFIGURATION (MUST BE FIRST) ---
 st.set_page_config(page_title="PaperBanao.ai", page_icon="📄", layout="wide")
 
-# --- 2. SESSION STATE INITIALIZATION ---
+# --- 2. SESSION STATE SETUP ---
 if 'manual_text_content' not in st.session_state:
     st.session_state.manual_text_content = ""
 if 'manual_uploaded_images' not in st.session_state:
@@ -20,7 +20,7 @@ if 'paper_history' not in st.session_state:
 if 'is_premium' not in st.session_state:
     st.session_state.is_premium = False
 
-# --- 3. CONSTANTS & SETUP ---
+# --- 3. CONSTANTS ---
 VALID_ACCESS_CODES = ["VIP2026", "PATNA100", "TEACHER50", "DEMO123"] 
 PAYMENT_LINK = "https://rzp.io/l/YOUR_LINK_HERE" 
 
