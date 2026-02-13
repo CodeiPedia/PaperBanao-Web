@@ -105,6 +105,7 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
     if paper_format == "Coaching Style (2-Column PDF Style)":
         content_class = "content-2-column"
 
+    # --- 🌟 FIXED CSS FOR A4 PRINTING ---
     html_content = f"""
     <!DOCTYPE html>
     <html>
@@ -113,24 +114,62 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
         <title>{details_dict['Topic']}</title>
         <link href='https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari&family=Roboto&display=swap' rel='stylesheet'>
         <style>
+            /* A4 SIZE FIX */
+            @page {{
+                size: A4;
+                margin: 10mm; /* Narrow margins for print */
+            }}
             @media print {{
+                html, body {{
+                    width: 210mm;
+                    height: 297mm;
+                    margin: 0;
+                    padding: 0;
+                }}
+                .main-container {{
+                    border: 2px solid #000 !important;
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    padding: 10px !important;
+                    margin: 0 !important;
+                    box-shadow: none !important;
+                }}
                 .page-break {{ page-break-before: always !important; display: block; }}
                 body {{ -webkit-print-color-adjust: exact; }}
             }}
-            body {{ font-family: 'Roboto', sans-serif; padding: 20px; max-width: 900px; margin: auto; line-height: 1.4; font-size: 14px; }}
-            .main-container {{ border: 2px solid #000; padding: 30px; min-height: 950px; position: relative; background: white; }}
+            
+            body {{ 
+                font-family: 'Roboto', sans-serif; 
+                padding: 20px; 
+                background: #f0f0f0; /* Grey background on screen only */
+            }}
+            
+            .main-container {{ 
+                border: 2px solid #000; 
+                padding: 25px; 
+                background: white; 
+                width: 100%;
+                max-width: 210mm; /* A4 width */
+                margin: 0 auto; 
+                box-sizing: border-box;
+                min-height: 290mm;
+            }}
+
             .answer-container {{ border: 2px dashed #444; padding: 30px; margin-top: 50px; background: #fff; page-break-before: always; }}
             .header-container {{ display: flex; align-items: center; border-bottom: 2px double #000; padding-bottom: 10px; margin-bottom: 15px; }}
             .logo {{ max-width: 80px; max-height: 80px; margin-right: 20px; }}
             .header-text {{ flex-grow: 1; text-align: center; }}
-            .header-text h1 {{ margin: 0; font-size: 28px; text-transform: uppercase; color: #111; }}
+            .header-text h1 {{ margin: 0; font-size: 26px; text-transform: uppercase; color: #000; }}
             .header-text p {{ margin: 2px 0; font-size: 14px; font-weight: bold; }}
+            
             .info-table {{ width: 100%; margin-top: 10px; border-collapse: collapse; margin-bottom: 15px; }}
-            .info-table td {{ padding: 5px; font-weight: bold; border: 1px solid #ddd; font-size: 13px; }}
-            .content-2-column {{ column-count: 2; column-gap: 40px; column-rule: 1px solid #ccc; }}
-            .content-standard {{ column-count: 1; }}
-            .question-item {{ break-inside: avoid-column; margin-bottom: 15px; }}
-            .footer {{ position: absolute; bottom: 10px; width: 100%; text-align: center; font-size: 10px; color: #555; left: 0; }}
+            .info-table td {{ padding: 5px; font-weight: bold; border: 1px solid #000; font-size: 13px; }}
+            
+            .content-2-column {{ column-count: 2; column-gap: 30px; column-rule: 1px solid #ccc; text-align: justify; }}
+            .content-standard {{ column-count: 1; text-align: justify; }}
+            .question-item {{ break-inside: avoid-column; margin-bottom: 12px; font-size: 15px; }}
+            
+            .footer {{ position: absolute; bottom: 5px; width: 100%; text-align: center; font-size: 10px; color: #555; left: 0; }}
             .answer-key-grid {{ column-count: 4; column-gap: 20px; font-size: 14px; margin-top: 10px; }}
         </style>
     </head>
@@ -202,7 +241,7 @@ with st.sidebar:
     with col1: time_limit = st.text_input("Time:", value="3 Hours")
     with col2: max_marks = st.text_input("Marks:", value="100")
     
-    # --- 🌟 NEW: INDIVIDUAL QUESTION CONTROL ---
+    # --- INDIVIDUAL QUESTION CONTROL ---
     st.markdown("---")
     st.subheader("📝 Questions & Difficulty")
     st.caption("Select Qty & Difficulty Mix (Easy, Medium, Hard)")
@@ -316,7 +355,7 @@ if btn_final:
                 else:
                     scope_instruction = f"Create a generic test paper for {subject if has_subject else 'General Knowledge'}."
 
-                # --- 🌟 NEW: QUANTITY + DIFFICULTY MIX LOGIC ---
+                # --- DIFFICULTY MIX LOGIC ---
                 def get_diff_str(diff_list):
                     return ", ".join(diff_list) if diff_list else "Mixed (Easy, Medium, Hard)"
 
