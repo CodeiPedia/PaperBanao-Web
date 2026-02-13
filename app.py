@@ -358,4 +358,24 @@ if btn_final:
                 elif paper_format == "BSEB (Bihar Board) Pattern":
                     base_prompt += "\nFollow Bihar Board style phrasing."
 
-                final_prompt = base_
+                final_prompt = base_prompt + """
+                \n\nAt the very end of the output, add exactly [[BREAK]] followed by the Answer Key for ALL objective questions.
+                """
+                
+                response = smart_model.generate_content(final_prompt)
+                ai_text_final = response.text
+                
+                # Update details for header
+                final_sub_display = subject if has_subject else "All Subjects"
+                details = {"Exam Name": exam_name, "Subject": final_sub_display, "Topic": display_topic, "Time": time_limit, "Marks": max_marks}
+                
+                final_manual_text = st.session_state.manual_text_content
+                final_manual_images = st.session_state.manual_uploaded_images
+                final_html = create_html_paper(ai_text_final, final_manual_text, final_manual_images, coaching_name, get_image_base64(final_logo), details, paper_format)
+                
+                timestamp = datetime.now().strftime("%I:%M %p")
+                st.session_state.paper_history.append({"time": timestamp, "topic": display_topic, "subject": final_sub_display, "format": paper_format, "html": final_html, "file_name": f"{final_sub_display}_paper.html"})
+                
+                st.balloons()
+                st.download_button("📥 Download HTML", final_html, f"paper_{exam_name}.html", "text/html")
+            except Exception as e: st.error(f"❌ AI Error: {e}")
