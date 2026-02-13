@@ -206,7 +206,6 @@ with st.sidebar:
     q_fib = st.checkbox("Fill in the Blanks", value=False)
     q_subj = st.checkbox("Subjective (Short/Long Qs)", value=False)
 
-    # UNLIMITED FOR TESTING
     num_questions = st.number_input("Number of Questions:", min_value=1, max_value=150, value=20, step=1)
 
     language = st.radio("Language:", ["Hindi", "English", "Bilingual"])
@@ -262,6 +261,7 @@ if btn_final:
                 try:
                     smart_model = get_working_model(api_key)
                     lang_prompt = "HINDI (Use authentic Hindi terminology)" if "Hindi" in language else "ENGLISH"
+                    
                     types_list = []
                     if q_mcq: types_list.append("MCQs")
                     if q_tf: types_list.append("True/False")
@@ -269,42 +269,62 @@ if btn_final:
                     if q_subj: types_list.append("Subjective (Short and Long Answer questions)")
                     types_str = ", ".join(types_list) if types_list else "MCQs"
 
-                    base_prompt = f"""
-                    Create a Test Paper for topic '{topic}' ({subject}). Language: {lang_prompt}. Total Questions: {num_questions}.
-                    Include ONLY these selected question types: {types_str}.
-                    CRITICAL INSTRUCTIONS: 
-                    1. DO NOT USE markdown asterisks (**) for bold text. Use HTML <b> tags.
-                    2. DO NOT USE LaTeX or `$` signs for chemical formulas. Use HTML <sub> tags strictly (e.g., C<sub>6</sub>H<sub>12</sub>O<sub>6</sub>).
-                    Format guidelines for MCQs: 
-                    <div class='question-item'><b>Q1. Question Text Here?</b><br>(A) Option A &nbsp;&nbsp;&nbsp;&nbsp; (B) Option B &nbsp;&nbsp;&nbsp;&nbsp; (C) Option C &nbsp;&nbsp;&nbsp;&nbsp; (D) Option D</div>
-                    """
+                    # --- 🌟 LOGIC FIX: Handle "All" Topic ---
+                    # If topic is "All", we explicitly say "Complete Syllabus of {subject}"
+                    if topic.lower() in ["all", "any", "full", "full syllabus"]:
+                        final_topic_prompt = f"COMPLETE SYLLABUS of {subject}"
+                    else:
+                        final_topic_prompt = topic
+
+                    # --- 🔒 STRICT PROMPT ---
+                    common_instructions = f"""
+                    You are an expert exam setter.
+                    Subject: {subject}
+                    Topic: {final_topic_prompt}
+                    Language: {lang_prompt}
                     
+                    CRITICAL INSTRUCTION (DO NOT IGNORE):
+                    1. STRICTLY generate questions ONLY for the subject '{subject}'. 
+                    2. Even if the Exam Name implies a stream (like 'Arts' or 'Science'), DO NOT ask questions from other subjects. 
+                       - If Subject is 'Hindi', ask ONLY Hindi questions.
+                       - If Subject is 'Math', ask ONLY Math questions.
+                    3. Do NOT use Markdown bold (**). Use HTML <b> tags.
+                    4. Do NOT use LaTeX/$. Use HTML <sub> tags for formulas (e.g. H<sub>2</sub>O).
+                    """
+
                     if paper_format == "CBSE Board Pattern":
                         base_prompt = f"""
-                        Create a CBSE style question paper for topic '{topic}' ({subject}). Language: {lang_prompt}.
-                        Include the following question types: {types_str}. Total approx questions: {num_questions}.
-                        Structure it strictly like a CBSE Final Exam.
-                        CRITICAL INSTRUCTIONS: Use HTML <b> tags. Use HTML <sub> tags for chemistry.
+                        {common_instructions}
+                        Create a CBSE style question paper. Total Questions: {num_questions}.
+                        Structure:
                         <b>General Instructions:</b><br>...<br><br>
-                        <b>SECTION A (Objective Type):</b> Include MCQs, Assertion-Reason, Fill in blanks (if selected).<br>
-                        <b>SECTION B (Short Answer Type):</b> 2-3 mark questions.<br>
-                        <b>SECTION C (Long Answer Type):</b> 5 mark questions.<br>
-                        Wrap each question in <div class='question-item'>...</div> for formatting.
+                        <b>SECTION A (Objective):</b> MCQs, Assertion-Reason.<br>
+                        <b>SECTION B (Short):</b> 2-3 mark Qs.<br>
+                        <b>SECTION C (Long):</b> 5 mark Qs.<br>
+                        Wrap questions in <div class='question-item'>...</div>.
                         """
                     elif paper_format == "BSEB (Bihar Board) Pattern":
                         base_prompt = f"""
-                        Create a BSEB (Bihar Board) style question paper for topic '{topic}' ({subject}). Language: {lang_prompt}. Total approx questions: {num_questions}.
-                        Structure it strictly like a Bihar Board Exam.
-                        CRITICAL INSTRUCTIONS: Use HTML <b> tags. Use HTML <sub> tags for chemistry.
-                        <b>खण्ड-अ (वस्तुनिष्ठ प्रश्न / Objective Type):</b> 50% MCQs (Provide 4 options A, B, C, D for each).<br>
-                        <b>खण्ड-ब (विषयनिष्ठ प्रश्न / Subjective Type):</b> 50% Short and Long answer questions.<br>
-                        Include these types if selected: {types_str}.
-                        Wrap each question in <div class='question-item'>...</div>.
+                        {common_instructions}
+                        Create a BSEB (Bihar Board) style paper. Total Questions: {num_questions}.
+                        Structure:
+                        <b>खण्ड-अ (वस्तुनिष्ठ / Objective):</b> 50% MCQs.<br>
+                        <b>खण्ड-ब (विषयनिष्ठ / Subjective):</b> 50% Short/Long Qs.<br>
+                        Wrap questions in <div class='question-item'>...</div>.
+                        """
+                    else:
+                        base_prompt = f"""
+                        {common_instructions}
+                        Create a Test Paper. Total Questions: {num_questions}.
+                        Include: {types_str}.
+                        Format MCQs: <div class='question-item'><b>Q1. Text?</b><br>(A) Opt A &nbsp;&nbsp; (B) Opt B...</div>
+                        Format Subjective: <div class='question-item'><b>Qx. Text?</b><br><br></div>
                         """
 
                     final_prompt = base_prompt + """
-                    \n\nAt the very end of the output, add exactly [[BREAK]] followed by the Answer Key for ALL objective and subjective questions.
+                    \n\nAt the very end, add exactly [[BREAK]] followed by the Answer Key.
                     """
+                    
                     response = smart_model.generate_content(final_prompt)
                     ai_text_final = response.text
                     details = {"Exam Name": exam_name, "Subject": subject, "Topic": topic, "Time": time_limit, "Marks": max_marks}
@@ -315,4 +335,4 @@ if btn_final:
                     st.session_state.paper_history.append({"time": timestamp, "topic": topic, "subject": subject, "format": paper_format, "html": final_html, "file_name": f"{subject}_{paper_format}.html"})
                     st.balloons()
                     st.download_button("📥 Download HTML", final_html, f"paper_{paper_format}.html", "text/html")
-                except Exception as e: st.error(f"❌ AI Error (Please check your API Key / Network): {e}")
+                except Exception as e: st.error(f"❌ AI Error: {e}")
