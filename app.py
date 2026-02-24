@@ -5,6 +5,7 @@ import base64
 import time
 import re
 from PIL import Image
+import PyPDF2  # <-- NEW: PDF Reader
 from datetime import datetime
 
 # --- 1. PAGE CONFIGURATION ---
@@ -23,7 +24,6 @@ st.markdown("""
 <style>
     .stButton>button { background-color: #1E88E5; color: white; font-size: 18px; width: 100%; border-radius: 8px; }
     .diagram-box { border: 2px dashed #1E88E5; padding: 15px; border-radius: 10px; background-color: #f0f8ff; margin-bottom: 20px;}
-    .q-box { background-color: #f8f9fa; padding: 10px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #ddd; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -67,10 +67,8 @@ def process_manual_text_auto_number(text, start_num):
     return "<br><br>".join(formatted_html_parts)
 
 def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, details_dict, paper_format):
-    # Formatting Cleanups
     ai_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', ai_text)
     ai_text = re.sub(r'#{1,6}\s?', '', ai_text)
-    # Chemistry Fixes
     ai_text = re.sub(r'\$_\{([0-9a-zA-Z+-]+)\}\$', r'<sub>\1</sub>', ai_text)
     ai_text = re.sub(r'\$_([0-9a-zA-Z+-]+)\$', r'<sub>\1</sub>', ai_text)
     ai_text = re.sub(r'_\{([0-9a-zA-Z+-]+)\}', r'<sub>\1</sub>', ai_text)
@@ -113,10 +111,7 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
         <title>{details_dict['Topic']}</title>
         <link href='https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari&family=Roboto&display=swap' rel='stylesheet'>
         <style>
-            @page {{
-                size: A4;
-                margin: 10mm;
-            }}
+            @page {{ size: A4; margin: 10mm; }}
             @media print {{
                 html, body {{ width: 210mm; height: 297mm; }}
                 .main-container {{ border: 2px solid #000 !important; width: 100% !important; margin: 0 !important; box-shadow: none !important; }}
@@ -124,10 +119,7 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
                 body {{ -webkit-print-color-adjust: exact; }}
             }}
             body {{ font-family: 'Roboto', sans-serif; padding: 20px; background: #f0f0f0; }}
-            .main-container {{ 
-                border: 2px solid #000; padding: 25px; background: white; 
-                width: 100%; max-width: 210mm; margin: 0 auto; box-sizing: border-box; min-height: 290mm;
-            }}
+            .main-container {{ border: 2px solid #000; padding: 25px; background: white; width: 100%; max-width: 210mm; margin: 0 auto; box-sizing: border-box; min-height: 290mm; }}
             .answer-container {{ border: 2px dashed #444; padding: 30px; margin-top: 50px; background: #fff; page-break-before: always; }}
             .header-container {{ display: flex; align-items: center; border-bottom: 2px double #000; padding-bottom: 10px; margin-bottom: 15px; }}
             .logo {{ max-width: 80px; max-height: 80px; margin-right: 20px; }}
@@ -140,15 +132,7 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
             .content-standard {{ column-count: 1; text-align: justify; }}
             .question-item {{ break-inside: avoid-column; margin-bottom: 12px; font-size: 15px; }}
             .footer {{ position: absolute; bottom: 5px; width: 100%; text-align: center; font-size: 10px; color: #555; left: 0; }}
-            
-            /* --- 🌟 UPDATED ANSWER KEY STYLE (Detailed) --- */
-            .answer-key-grid {{ 
-                column-count: 2; /* 2 Columns for better readability of long answers */
-                column-gap: 40px; 
-                font-size: 13px; 
-                margin-top: 10px; 
-                text-align: left;
-            }}
+            .answer-key-grid {{ column-count: 2; column-gap: 40px; font-size: 13px; margin-top: 10px; text-align: left; }}
             .answer-item {{ margin-bottom: 15px; break-inside: avoid-column; }}
             .ans-hint {{ color: #666; font-style: italic; font-size: 12px; display: block; margin-top: 2px; }}
             .ans-detail {{ color: #000; display: block; margin-top: 4px; border-left: 2px solid #ddd; padding-left: 8px; }}
@@ -165,18 +149,7 @@ def create_html_paper(ai_text, manual_text, manual_images, coaching, logo_data, 
             <div class='{content_class}'>{final_questions_body}</div>
             <div class='footer'>Created by PaperBanao.ai</div>
         </div>
-        {f'''
-        <div class='answer-container'>
-            <div class='header'>
-                <h2 style='text-align:center; margin-bottom:0;'>Detailed Solutions & Hints</h2>
-                <p style='text-align:center; color:#666;'>{details_dict['Subject']} - {details_dict['Topic']}</p>
-                <hr>
-            </div>
-            <div class='answer-key-grid'>
-                {ai_answers}
-            </div>
-        </div>
-        ''' if ai_answers else ''}
+        {f'''<div class='answer-container'><div class='header'><h2 style='text-align:center; margin-bottom:0;'>Detailed Solutions & Hints</h2><p style='text-align:center; color:#666;'>{details_dict['Subject']} - {details_dict['Topic']}</p><hr></div><div class='answer-key-grid'>{ai_answers}</div></div>''' if ai_answers else ''}
     </body>
     </html>
     """
@@ -212,7 +185,6 @@ else:
 
 with st.sidebar:
     st.header("⚙️ Control Panel")
-    st.markdown("### 🔑 API License")
     api_key = st.text_input("Enter Your Gemini API Key:", type="password")
     if api_key: st.success("✅ API Key Ready!")
     else: st.warning("⚠️ Enter API Key to proceed.")
@@ -222,6 +194,14 @@ with st.sidebar:
     uploaded_logo = st.file_uploader("Upload Institute Logo", type=['png', 'jpg'])
     final_logo = uploaded_logo 
     
+    st.markdown("---")
+    
+    # --- 🌟 NEW: PDF UPLOAD SECTION ---
+    st.subheader("📄 AI Source Material (PDF)")
+    st.caption("Upload a Book or PYQ PDF. AI will extract questions from it!")
+    uploaded_pdf = st.file_uploader("Upload PDF Document:", type=['pdf'])
+    # ----------------------------------
+
     st.markdown("---")
     st.subheader("📚 Exam Details")
     
@@ -235,31 +215,22 @@ with st.sidebar:
     
     st.markdown("---")
     st.subheader("📝 Questions & Difficulty")
-    st.caption("Select Qty & Difficulty Mix (Easy, Medium, Hard)")
-
     with st.container():
-        st.markdown("**1. Multiple Choice (MCQs)**")
         c1, c2 = st.columns([1, 2])
-        num_mcq = c1.number_input("Qty:", min_value=0, value=10, key="n_mcq")
-        diff_mcq = c2.multiselect("Difficulty:", ["Easy", "Medium", "Hard"], default=["Medium"], key="d_mcq")
-    
+        num_mcq = c1.number_input("MCQs Qty:", min_value=0, value=10)
+        diff_mcq = c2.multiselect("MCQ Diff:", ["Easy", "Medium", "Hard"], default=["Medium"])
     with st.container():
-        st.markdown("**2. Fill in the Blanks**")
         c1, c2 = st.columns([1, 2])
-        num_fib = c1.number_input("Qty:", min_value=0, value=5, key="n_fib")
-        diff_fib = c2.multiselect("Difficulty:", ["Easy", "Medium", "Hard"], default=["Easy", "Medium"], key="d_fib")
-
+        num_fib = c1.number_input("Fill Blanks Qty:", min_value=0, value=5)
+        diff_fib = c2.multiselect("Fill Blanks Diff:", ["Easy", "Medium", "Hard"], default=["Easy", "Medium"])
     with st.container():
-        st.markdown("**3. True / False**")
         c1, c2 = st.columns([1, 2])
-        num_tf = c1.number_input("Qty:", min_value=0, value=5, key="n_tf")
-        diff_tf = c2.multiselect("Difficulty:", ["Easy", "Medium", "Hard"], default=["Easy"], key="d_tf")
-
+        num_tf = c1.number_input("True/False Qty:", min_value=0, value=5)
+        diff_tf = c2.multiselect("T/F Diff:", ["Easy", "Medium", "Hard"], default=["Easy"])
     with st.container():
-        st.markdown("**4. Subjective (Short/Long)**")
         c1, c2 = st.columns([1, 2])
-        num_subj = c1.number_input("Qty:", min_value=0, value=3, key="n_subj")
-        diff_subj = c2.multiselect("Difficulty:", ["Easy", "Medium", "Hard"], default=["Medium", "Hard"], key="d_subj")
+        num_subj = c1.number_input("Subjective Qty:", min_value=0, value=3)
+        diff_subj = c2.multiselect("Subj Diff:", ["Easy", "Medium", "Hard"], default=["Medium", "Hard"])
 
     total_q = num_mcq + num_fib + num_tf + num_subj
     st.info(f"📊 Total Questions: {total_q}")
@@ -267,47 +238,7 @@ with st.sidebar:
     paper_format = st.selectbox("Format Type:", ["Coaching Style (2-Column PDF Style)", "CBSE Board Pattern", "BSEB (Bihar Board) Pattern", "Standard Custom"])
     language = st.radio("Language:", ["Hindi", "English", "Bilingual"])
     
-    st.markdown("---")
-    st.subheader("2️⃣ Diagram Questions")
-    with st.expander("✨ Generate from Diagram", expanded=False):
-        diagram_img_upload = st.file_uploader("Upload Diagram:", type=['png', 'jpg', 'jpeg'], key="dia_up")
-        if diagram_img_upload:
-            st.image(diagram_img_upload, caption="Preview", use_column_width=True)
-            diagram_prompt = st.text_input("Instruction:", key="dia_p")
-            if st.button("Generate Question"):
-                if not api_key: st.error("❌ API Key Required.")
-                else:
-                    with st.spinner("AI Looking..."):
-                        try:
-                            smart_model = get_working_model(api_key)
-                            img_pil = Image.open(diagram_img_upload)
-                            lang_hint = "in HINDI" if "Hindi" in language else "in ENGLISH"
-                            full_prompt = [f"Create 1 MCQ {lang_hint}. Instruction: {diagram_prompt}. Format: Question text, then (A)..(B)..(C)..(D).. (All on one line separated by spaces)", img_pil]
-                            response = smart_model.generate_content(full_prompt)
-                            sep = "\n\n" if st.session_state.manual_text_content else ""
-                            st.session_state.manual_text_content += sep + response.text.strip()
-                            st.session_state.manual_uploaded_images.append(diagram_img_upload)
-                            st.success("Added!")
-                            st.rerun()
-                        except Exception as e: st.error(f"Error: {e}")
-
-    st.markdown("---")
-    with st.expander("3️⃣ Review / Edit Manual"):
-        manual_text = st.text_area("Editor", value=st.session_state.manual_text_content, height=200)
-        st.session_state.manual_text_content = manual_text
-        if st.button("Clear All"):
-            st.session_state.manual_text_content = ""
-            st.session_state.manual_uploaded_images = []
-            st.rerun()
-
     btn_final = st.button("🚀 Generate Final Paper", type="primary")
-
-    st.markdown("---")
-    st.markdown("### 📜 Session History")
-    if len(st.session_state.paper_history) > 0:
-        for idx, item in enumerate(reversed(st.session_state.paper_history)):
-            with st.expander(f"{item['time']} - {item['format']}"):
-                st.download_button(label="📥 Download Again", data=item['html'], file_name=item['file_name'], mime="text/html", key=f"hist_btn_{idx}")
 
 # --- 6. MAIN LOGIC ---
 if btn_final:
@@ -316,8 +247,20 @@ if btn_final:
     elif total_q == 0:
         st.error("⚠️ Please select at least one question.")
     else:
-        with st.spinner(f'Generating {exam_name} Paper...'):
+        with st.spinner(f'Reading Data & Generating {exam_name} Paper (This may take a minute)...'):
             try:
+                # --- 🧠 EXTRACT PDF TEXT ---
+                pdf_text_content = ""
+                if uploaded_pdf is not None:
+                    st.toast("Reading PDF Document...")
+                    pdf_reader = PyPDF2.PdfReader(uploaded_pdf)
+                    # Extract text from all pages (Limit to 50 pages to save time/tokens if needed, but 1.5 handles a lot)
+                    for page in pdf_reader.pages:
+                        page_text = page.extract_text()
+                        if page_text:
+                            pdf_text_content += page_text + "\n"
+                # ---------------------------
+
                 smart_model = get_working_model(api_key)
                 lang_prompt = "HINDI (Use authentic Hindi terminology)" if "Hindi" in language else "ENGLISH"
 
@@ -325,20 +268,21 @@ if btn_final:
                 has_subject = bool(subject.strip())
                 has_topic = bool(topic.strip())
 
-                scope_instruction = ""
-                display_topic = "Full Syllabus"
+                display_topic = topic if has_topic else (f"Full Syllabus ({subject})" if has_subject else "Full Mock Test (All Subjects)")
 
-                if has_exam and has_subject and has_topic:
-                    scope_instruction = f"Strictly focus on Topic '{topic}' from Subject '{subject}' for Exam '{exam_name}'."
-                    display_topic = topic
-                elif has_exam and has_subject and not has_topic:
-                    scope_instruction = f"Create a FULL SYLLABUS paper for Subject '{subject}' relevant to Exam '{exam_name}'."
-                    display_topic = f"Full Syllabus ({subject})"
-                elif has_exam and not has_subject:
-                    scope_instruction = f"Create a FULL MOCK TEST for Exam '{exam_name}' (Include All Subjects)."
-                    display_topic = "Full Mock Test (All Subjects)"
+                # --- PDF RAG LOGIC ---
+                if pdf_text_content:
+                    scope_instruction = f"""
+                    CRITICAL SOURCE REQUIREMENT: The user has provided a source text document (Book/PYQ). 
+                    You MUST extract, select, or frame questions STRICTLY based on the knowledge provided in the 'SOURCE TEXT' below. 
+                    Filter the questions to match the Subject '{subject}' and Topic '{topic}' (if specified). Do not invent outside facts.
+                    
+                    --- START OF SOURCE TEXT ---
+                    {pdf_text_content[:80000]}  # Processing up to ~100k characters for speed
+                    --- END OF SOURCE TEXT ---
+                    """
                 else:
-                    scope_instruction = f"Create a generic test paper for {subject if has_subject else 'General Knowledge'}."
+                    scope_instruction = f"Strictly focus on Topic '{display_topic}' from Subject '{subject}' for Exam '{exam_name}'."
 
                 def get_diff_str(diff_list):
                     return ", ".join(diff_list) if diff_list else "Mixed (Easy, Medium, Hard)"
@@ -349,22 +293,19 @@ if btn_final:
                 2. {num_fib} Fill in Blanks. Difficulty Mix: {get_diff_str(diff_fib)}.
                 3. {num_tf} True / False. Difficulty Mix: {get_diff_str(diff_tf)}.
                 4. {num_subj} Subjective (Short/Long). Difficulty Mix: {get_diff_str(diff_subj)}.
-                
                 Total Questions: {total_q}.
                 """
 
                 base_prompt = f"""
-                You are an expert exam setter.
-                Language: {lang_prompt}
+                You are an expert exam setter. Language: {lang_prompt}
                 
-                SCOPE: {scope_instruction}
+                {scope_instruction}
                 
                 STRUCTURE REQUEST: {qty_instruction}
 
                 CRITICAL RULES: 
-                1. Follow the Difficulty Mix STRICTLY for each section.
-                2. DO NOT USE markdown asterisks (**) for bold text. Use HTML <b> tags.
-                3. DO NOT USE LaTeX or `$` signs. Use HTML <sub> tags strictly (e.g., C<sub>6</sub>H<sub>12</sub>O<sub>6</sub>).
+                1. DO NOT USE markdown asterisks (**) for bold text. Use HTML <b> tags.
+                2. DO NOT USE LaTeX or `$` signs. Use HTML <sub> tags strictly (e.g., C<sub>6</sub>H<sub>12</sub>O<sub>6</sub>).
                 
                 FORMATTING:
                 - MCQs: <div class='question-item'><b>Q. Question?</b><br>(A) .. (B) .. (C) .. (D) ..</div>
@@ -373,21 +314,11 @@ if btn_final:
                 - Subjective: <div class='question-item'><b>Q. Question?</b><br><br></div>
                 """
                 
-                if paper_format == "CBSE Board Pattern":
-                    base_prompt += "\nFollow CBSE style phrasing."
-                elif paper_format == "BSEB (Bihar Board) Pattern":
-                    base_prompt += "\nFollow Bihar Board style phrasing."
-
-                # --- 🌟 UPDATED SOLUTION PROMPT ---
                 final_prompt = base_prompt + """
                 \n\nAt the very end of the output, add exactly [[BREAK]] followed by the DETAILED SOLUTION KEY.
-                
-                FORMAT FOR SOLUTIONS (Strictly follow this HTML structure):
-                For Objective Questions (MCQ, True/False, Blanks):
-                <div class='answer-item'><b>Qx. Correct Answer</b><br><span class='ans-hint'>Hint: Short reason why this is correct.</span></div>
-                
-                For Subjective Questions:
-                <div class='answer-item'><b>Qx.</b><br><span class='ans-detail'>Detailed step-by-step model answer here. Explain clearly.</span></div>
+                FORMAT FOR SOLUTIONS:
+                For Objective: <div class='answer-item'><b>Qx. Answer</b><br><span class='ans-hint'>Hint: Short reason.</span></div>
+                For Subjective: <div class='answer-item'><b>Qx.</b><br><span class='ans-detail'>Detailed step-by-step model answer.</span></div>
                 """
                 
                 response = smart_model.generate_content(final_prompt)
@@ -396,9 +327,7 @@ if btn_final:
                 final_sub_display = subject if has_subject else "All Subjects"
                 details = {"Exam Name": exam_name, "Subject": final_sub_display, "Topic": display_topic, "Time": time_limit, "Marks": max_marks}
                 
-                final_manual_text = st.session_state.manual_text_content
-                final_manual_images = st.session_state.manual_uploaded_images
-                final_html = create_html_paper(ai_text_final, final_manual_text, final_manual_images, coaching_name, get_image_base64(final_logo), details, paper_format)
+                final_html = create_html_paper(ai_text_final, "", [], coaching_name, get_image_base64(final_logo), details, paper_format)
                 
                 timestamp = datetime.now().strftime("%I:%M %p")
                 st.session_state.paper_history.append({"time": timestamp, "topic": display_topic, "subject": final_sub_display, "format": paper_format, "html": final_html, "file_name": f"{final_sub_display}_paper.html"})
