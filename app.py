@@ -190,4 +190,51 @@ with tab2:
 
     if submit_t2:
         if not api_key: st.error("API Key is missing!")
-        elif not uploaded
+        elif not uploaded_pdf: st.error("Please upload a PDF document.")
+        elif not subject_t2 or not topic_t2: st.error("Please fill in the Subject and Topic.")
+        else:
+            with st.spinner("Reading PDF and Generating Questions..."):
+                document_text = extract_text_from_pdf(uploaded_pdf, start_p, end_p)
+                total_q2 = mcq_t2 + fib_t2 + tf_t2 + short_t2 + long_t2
+                q_reqs2 = build_question_prompt(mcq_t2, mcq_d2, fib_t2, fib_d2, tf_t2, tf_d2, short_t2, short_d2, long_t2, long_d2)
+                
+                header2 = f"""
+# {inst_name}
+**Subject:** {subject_t2} | **Topic:** {topic_t2}
+**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q2}
+***
+**General Instructions:**
+1. All questions are compulsory.
+2. Read the questions carefully before answering.
+***
+                """
+                
+                prompt2 = f"""
+                You are an expert exam creator. Generate an exam ONLY for the topic requested below using the provided text.
+                - Subject: {subject_t2}
+                - Target Topic: {topic_t2}
+                
+                CRITICAL INSTRUCTIONS:
+                1. Ignore any text NOT related to '{topic_t2}'.
+                2. Extract questions STRICTLY from the text provided below.
+                
+                You MUST start your response EXACTLY with this formatting header (do not add your own titles before this):
+                {header2}
+                
+                Generate exactly the following sections and questions:
+                {q_reqs2}
+                
+                Textbook text:
+                ---
+                {document_text}
+                ---
+                """
+                try:
+                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    response = model.generate_content(prompt2)
+                    st.success("Success!")
+                    st.markdown("---")
+                    st.markdown(response.text)
+                    st.download_button("📥 Download PDF Paper", data=response.text, file_name=f"{topic_t2}_Paper.txt")
+                except Exception as e:
+                    st.error(f"Error: {e}")
