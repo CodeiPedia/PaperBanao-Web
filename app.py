@@ -2,6 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 import PyPDF2
 import os
+from PIL import Image
 
 # --- Page Config ---
 st.set_page_config(page_title="PaperBanao - AI Question Paper", page_icon="📝", layout="centered")
@@ -30,8 +31,10 @@ else:
 
 st.sidebar.markdown("---")
 st.sidebar.header("🏫 Institute Details")
-st.sidebar.markdown("<small>These details will be printed on the paper header.</small>", unsafe_allow_html=True)
+st.sidebar.markdown("<small>These details will appear on your question paper.</small>", unsafe_allow_html=True)
 
+# नया Feature: Logo Upload
+inst_logo = st.sidebar.file_uploader("Upload Institute Logo", type=["png", "jpg", "jpeg"])
 inst_name = st.sidebar.text_input("Institute / School Name", value="My Success Academy")
 exam_time = st.sidebar.text_input("Exam Time (Duration)", value="2 Hours")
 max_marks = st.sidebar.number_input("Maximum Marks", min_value=1, value=50)
@@ -130,20 +133,28 @@ with tab1:
                 
                 prompt1 = f"""
                 You are an expert educator. Create an exam paper covering strictly: {syllabus_t1}
-                
-                You MUST start your response EXACTLY with this formatting header (do not add your own titles before this):
+                You MUST start your response EXACTLY with this formatting header:
                 {header1}
-                
                 Generate exactly the following sections and questions:
                 {q_reqs1}
                 """
                 try:
                     model = genai.GenerativeModel('gemini-1.5-flash')
                     response = model.generate_content(prompt1)
-                    st.success("Success!")
+                    st.success("Success! Your paper is ready.")
+                    
                     st.markdown("---")
+                    # Display the uploaded logo on the generated paper preview!
+                    if inst_logo is not None:
+                        # Center the logo using columns
+                        col_space1, col_img, col_space2 = st.columns([2, 1, 2])
+                        with col_img:
+                            st.image(inst_logo, width=150)
+                            
                     st.markdown(response.text)
-                    st.download_button("📥 Download Paper", data=response.text, file_name=f"{subject_t1}_Paper.txt")
+                    st.markdown("---")
+                    
+                    st.download_button("📥 Download Paper (Text)", data=response.text, file_name=f"{subject_t1}_Paper.txt")
                 except Exception as e:
                     st.error(f"Error: {e}")
 
@@ -213,17 +224,13 @@ with tab2:
                 You are an expert exam creator. Generate an exam ONLY for the topic requested below using the provided text.
                 - Subject: {subject_t2}
                 - Target Topic: {topic_t2}
-                
                 CRITICAL INSTRUCTIONS:
                 1. Ignore any text NOT related to '{topic_t2}'.
                 2. Extract questions STRICTLY from the text provided below.
-                
-                You MUST start your response EXACTLY with this formatting header (do not add your own titles before this):
+                You MUST start your response EXACTLY with this formatting header:
                 {header2}
-                
                 Generate exactly the following sections and questions:
                 {q_reqs2}
-                
                 Textbook text:
                 ---
                 {document_text}
@@ -232,9 +239,18 @@ with tab2:
                 try:
                     model = genai.GenerativeModel('gemini-1.5-flash')
                     response = model.generate_content(prompt2)
-                    st.success("Success!")
+                    st.success("Success! Your paper is ready.")
+                    
                     st.markdown("---")
+                    # Display the uploaded logo on the generated paper preview!
+                    if inst_logo is not None:
+                        col_space3, col_img2, col_space4 = st.columns([2, 1, 2])
+                        with col_img2:
+                            st.image(inst_logo, width=150)
+                            
                     st.markdown(response.text)
-                    st.download_button("📥 Download PDF Paper", data=response.text, file_name=f"{topic_t2}_Paper.txt")
+                    st.markdown("---")
+                    
+                    st.download_button("📥 Download PDF Paper (Text)", data=response.text, file_name=f"{topic_t2}_Paper.txt")
                 except Exception as e:
                     st.error(f"Error: {e}")
