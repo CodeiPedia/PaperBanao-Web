@@ -31,14 +31,18 @@ else:
 
 st.sidebar.markdown("---")
 st.sidebar.header("🏫 Institute Details")
-st.sidebar.markdown("<small>These details will appear on your question paper.</small>", unsafe_allow_html=True)
 
-# नया Feature: Logo Upload
 inst_logo = st.sidebar.file_uploader("Upload Institute Logo", type=["png", "jpg", "jpeg"])
 inst_name = st.sidebar.text_input("Institute / School Name", value="My Success Academy")
 exam_time = st.sidebar.text_input("Exam Time (Duration)", value="2 Hours")
 max_marks = st.sidebar.number_input("Maximum Marks", min_value=1, value=50)
 
+st.sidebar.markdown("---")
+st.sidebar.header("📜 Exam Format")
+board_format = st.sidebar.selectbox(
+    "Select Board Pattern", 
+    ["Standard / Default", "BSEB (Bihar Board)", "CBSE", "ICSE"]
+)
 
 # --- Helper Functions ---
 def extract_text_from_pdf(uploaded_file, start_page, end_page):
@@ -57,15 +61,24 @@ def extract_text_from_pdf(uploaded_file, start_page, end_page):
 
 def build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d):
     reqs = []
-    if mcq_c > 0: reqs.append(f"- Section A: {mcq_c} Multiple Choice Questions (Diff: {mcq_d}). Provide 4 options.")
-    if fib_c > 0: reqs.append(f"- Section B: {fib_c} Fill in the Blanks (Diff: {fib_d}).")
-    if tf_c > 0:  reqs.append(f"- Section C: {tf_c} True/False Questions (Diff: {tf_d}).")
-    if short_c > 0: reqs.append(f"- Section D: {short_c} Short Answer Questions (Diff: {short_d}).")
-    if long_c > 0:  reqs.append(f"- Section E: {long_c} Long Answer Questions (Diff: {long_d}).")
+    if mcq_c > 0: reqs.append(f"- {mcq_c} Multiple Choice Questions (Diff: {mcq_d}). Provide 4 options.")
+    if fib_c > 0: reqs.append(f"- {fib_c} Fill in the Blanks (Diff: {fib_d}).")
+    if tf_c > 0:  reqs.append(f"- {tf_c} True/False Questions (Diff: {tf_d}).")
+    if short_c > 0: reqs.append(f"- {short_c} Short Answer Questions (Diff: {short_d}).")
+    if long_c > 0:  reqs.append(f"- {long_c} Long Answer Questions (Diff: {long_d}).")
     
     if not reqs: return "No questions requested."
     return "\n".join(reqs) + "\n\n*CRITICAL: Put ALL the answers/solutions at the very end of the document on a new page titled 'Answer Key'. Do NOT write answers immediately after the questions.*"
 
+def get_board_instructions(board):
+    if board == "CBSE":
+        return "CRITICAL BOARD FORMAT: Structure the paper strictly matching CBSE board exam patterns. Group questions logically into Sections (e.g., Section A, B, C, D) based on objective vs subjective types. Add standard CBSE General Instructions at the top (e.g., 'This question paper comprises X sections. All questions are compulsory.')."
+    elif board == "ICSE":
+        return "CRITICAL BOARD FORMAT: Structure the paper strictly matching ICSE board exam patterns. Divide the paper into Section A (Compulsory short/objective questions) and Section B (Subjective questions). Add standard ICSE General Instructions."
+    elif board == "BSEB (Bihar Board)":
+        return "CRITICAL BOARD FORMAT: Structure the paper strictly matching BSEB (Bihar School Examination Board) patterns. Clearly divide the paper into two main parts: 'Section-A: Objective Type Questions' (All MCQs) and 'Section-B: Non-Objective / Subjective Type Questions' (Short & Long Answers). Add standard BSEB General Instructions."
+    else:
+        return "Format the paper beautifully as a standard ready-to-print exam paper with clear sections."
 
 # ==========================================
 # --- CREATE TABS FOR PROFESSIONAL UI ---
@@ -116,26 +129,26 @@ with tab1:
         if not api_key: st.error("API Key is missing!")
         elif not subject_t1 or not syllabus_t1: st.error("Please fill in the Subject and Syllabus.")
         else:
-            with st.spinner("Generating Paper..."):
+            with st.spinner(f"Generating {board_format} Paper..."):
                 total_q1 = mcq_t1 + fib_t1 + tf_t1 + short_t1 + long_t1
                 q_reqs1 = build_question_prompt(mcq_t1, mcq_d1, fib_t1, fib_d1, tf_t1, tf_d1, short_t1, short_d1, long_t1, long_d1)
+                board_rules = get_board_instructions(board_format)
                 
                 header1 = f"""
 # {inst_name}
-**Class:** {grade_t1} | **Subject:** {subject_t1} 
+**Class:** {grade_t1} | **Subject:** {subject_t1} | **Pattern:** {board_format}
 **Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q1}
-***
-**General Instructions:**
-1. All questions are compulsory.
-2. Read the questions carefully before answering.
 ***
                 """
                 
                 prompt1 = f"""
                 You are an expert educator. Create an exam paper covering strictly: {syllabus_t1}
+                {board_rules}
+                
                 You MUST start your response EXACTLY with this formatting header:
                 {header1}
-                Generate exactly the following sections and questions:
+                
+                Generate exactly the following questions:
                 {q_reqs1}
                 """
                 try:
@@ -144,9 +157,7 @@ with tab1:
                     st.success("Success! Your paper is ready.")
                     
                     st.markdown("---")
-                    # Display the uploaded logo on the generated paper preview!
                     if inst_logo is not None:
-                        # Center the logo using columns
                         col_space1, col_img, col_space2 = st.columns([2, 1, 2])
                         with col_img:
                             st.image(inst_logo, width=150)
@@ -154,7 +165,7 @@ with tab1:
                     st.markdown(response.text)
                     st.markdown("---")
                     
-                    st.download_button("📥 Download Paper (Text)", data=response.text, file_name=f"{subject_t1}_Paper.txt")
+                    st.download_button("📥 Download Paper (Text)", data=response.text, file_name=f"{subject_t1}_{board_format}_Paper.txt")
                 except Exception as e:
                     st.error(f"Error: {e}")
 
@@ -204,19 +215,16 @@ with tab2:
         elif not uploaded_pdf: st.error("Please upload a PDF document.")
         elif not subject_t2 or not topic_t2: st.error("Please fill in the Subject and Topic.")
         else:
-            with st.spinner("Reading PDF and Generating Questions..."):
+            with st.spinner(f"Reading PDF & Generating {board_format} Paper..."):
                 document_text = extract_text_from_pdf(uploaded_pdf, start_p, end_p)
                 total_q2 = mcq_t2 + fib_t2 + tf_t2 + short_t2 + long_t2
                 q_reqs2 = build_question_prompt(mcq_t2, mcq_d2, fib_t2, fib_d2, tf_t2, tf_d2, short_t2, short_d2, long_t2, long_d2)
+                board_rules = get_board_instructions(board_format)
                 
                 header2 = f"""
 # {inst_name}
-**Subject:** {subject_t2} | **Topic:** {topic_t2}
+**Subject:** {subject_t2} | **Topic:** {topic_t2} | **Pattern:** {board_format}
 **Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q2}
-***
-**General Instructions:**
-1. All questions are compulsory.
-2. Read the questions carefully before answering.
 ***
                 """
                 
@@ -227,10 +235,15 @@ with tab2:
                 CRITICAL INSTRUCTIONS:
                 1. Ignore any text NOT related to '{topic_t2}'.
                 2. Extract questions STRICTLY from the text provided below.
+                
+                {board_rules}
+                
                 You MUST start your response EXACTLY with this formatting header:
                 {header2}
-                Generate exactly the following sections and questions:
+                
+                Generate exactly the following questions:
                 {q_reqs2}
+                
                 Textbook text:
                 ---
                 {document_text}
@@ -242,7 +255,6 @@ with tab2:
                     st.success("Success! Your paper is ready.")
                     
                     st.markdown("---")
-                    # Display the uploaded logo on the generated paper preview!
                     if inst_logo is not None:
                         col_space3, col_img2, col_space4 = st.columns([2, 1, 2])
                         with col_img2:
@@ -251,6 +263,6 @@ with tab2:
                     st.markdown(response.text)
                     st.markdown("---")
                     
-                    st.download_button("📥 Download PDF Paper (Text)", data=response.text, file_name=f"{topic_t2}_Paper.txt")
+                    st.download_button("📥 Download PDF Paper (Text)", data=response.text, file_name=f"{topic_t2}_{board_format}_Paper.txt")
                 except Exception as e:
                     st.error(f"Error: {e}")
