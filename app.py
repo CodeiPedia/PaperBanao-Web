@@ -186,4 +186,85 @@ with tab2:
         with col7: topic_t2 = st.text_input("Specific Topic", key="top2")
             
         st.markdown("#### Question Setup")
-        c4, c5, c6 = st.columns(
+        c4, c5, c6 = st.columns([2, 1, 2])
+        c4.markdown("**Type**"); c5.markdown("**Count**"); c6.markdown("**Difficulty**")
+        
+        c4.write("Multiple Choice (MCQs)")
+        mcq_t2 = c5.number_input("MCQ count", min_value=0, value=5, label_visibility="collapsed", key="m_c2")
+        mcq_d2 = c6.selectbox("MCQ Diff", diff_options, label_visibility="collapsed", key="m_d2")
+
+        c4.write("Fill in the Blanks")
+        fib_t2 = c5.number_input("FIB count", min_value=0, value=3, label_visibility="collapsed", key="f_c2")
+        fib_d2 = c6.selectbox("FIB Diff", diff_options, label_visibility="collapsed", key="f_d2")
+
+        c4.write("True / False")
+        tf_t2 = c5.number_input("TF count", min_value=0, value=3, label_visibility="collapsed", key="t_c2")
+        tf_d2 = c6.selectbox("TF Diff", diff_options, label_visibility="collapsed", key="t_d2")
+
+        c4.write("Short Answer")
+        short_t2 = c5.number_input("Short count", min_value=0, value=3, label_visibility="collapsed", key="s_c2")
+        short_d2 = c6.selectbox("Short Diff", diff_options, label_visibility="collapsed", key="s_d2")
+
+        c4.write("Long Answer")
+        long_t2 = c5.number_input("Long count", min_value=0, value=2, label_visibility="collapsed", key="l_c2")
+        long_d2 = c6.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d2")
+
+        submit_t2 = st.form_submit_button("📑 Extract & Generate Paper")
+
+    if submit_t2:
+        if not api_key: st.error("API Key is missing!")
+        elif not uploaded_pdf: st.error("Please upload a PDF document.")
+        elif not subject_t2 or not topic_t2: st.error("Please fill in the Subject and Topic.")
+        else:
+            with st.spinner(f"Reading PDF & Generating {board_format} Paper... Please wait."):
+                document_text = extract_text_from_pdf(uploaded_pdf, start_p, end_p)
+                total_q2 = mcq_t2 + fib_t2 + tf_t2 + short_t2 + long_t2
+                q_reqs2 = build_question_prompt(mcq_t2, mcq_d2, fib_t2, fib_d2, tf_t2, tf_d2, short_t2, short_d2, long_t2, long_d2)
+                board_rules = get_board_instructions(board_format)
+                
+                header2 = f"""
+# {inst_name}
+**Subject:** {subject_t2} | **Topic:** {topic_t2} | **Pattern:** {board_format}
+**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q2}
+***
+                """
+                
+                prompt2 = f"""
+                You are an expert exam creator. Generate an exam ONLY for the topic requested below using the provided text.
+                - Subject: {subject_t2}
+                - Target Topic: {topic_t2}
+                CRITICAL INSTRUCTIONS:
+                1. Ignore any text NOT related to '{topic_t2}'.
+                2. Extract questions STRICTLY from the text provided below.
+                
+                {board_rules}
+                
+                You MUST start your response EXACTLY with this formatting header:
+                {header2}
+                
+                Generate exactly the following questions:
+                {q_reqs2}
+                
+                Textbook text:
+                ---
+                {document_text}
+                ---
+                """
+                try:
+                    # FIX APPLIED HERE: Using stable gemini-pro model
+                    model = genai.GenerativeModel('gemini-pro')
+                    response = model.generate_content(prompt2)
+                    st.success("Success! Your paper is ready.")
+                    
+                    st.markdown("---")
+                    if inst_logo is not None:
+                        col_space3, col_img2, col_space4 = st.columns([2, 1, 2])
+                        with col_img2:
+                            st.image(inst_logo, width=150)
+                            
+                    st.markdown(response.text)
+                    st.markdown("---")
+                    
+                    st.download_button("📥 Download PDF Paper (Text)", data=response.text, file_name=f"{topic_t2}_{board_format}_Paper.txt")
+                except Exception as e:
+                    st.error(f"API Error: {e}")
