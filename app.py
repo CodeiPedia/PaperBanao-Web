@@ -78,7 +78,6 @@ def build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short
     if long_c > 0:  reqs.append(f"- {long_c} Long Answer Questions (Diff: {long_d}).")
     
     if not reqs: return "No questions requested."
-    # FIX: Strictly forced AI to use EXACT heading for Answer Key
     return "\n".join(reqs) + "\n\n*CRITICAL: Put ALL the answers/solutions at the very end of the document. You MUST use the exact heading '# Answer Key' for this section. Do NOT write answers immediately after the questions.*"
 
 def get_board_instructions(board):
@@ -91,9 +90,8 @@ def get_board_instructions(board):
     else:
         return "Format the paper beautifully as a standard ready-to-print exam paper with clear sections."
 
-# === NEW FEATURE: HTML A4 GENERATOR WITH PAGE BREAK & MATH SUPPORT ===
+# === HTML A4 GENERATOR WITH PAGE BREAK & MATH SUPPORT ===
 def create_a4_html(md_content):
-    # MAGIC FIX: Find "Answer Key" and insert a Page Break code right before it!
     md_content = md_content.replace("# Answer Key", "<div style='page-break-before: always;'></div>\n# Answer Key")
     md_content = md_content.replace("# ANSWER KEY", "<div style='page-break-before: always;'></div>\n# ANSWER KEY")
     md_content = md_content.replace("## Answer Key", "<div style='page-break-before: always;'></div>\n## Answer Key")
@@ -199,6 +197,7 @@ with tab1:
         short_t1 = c2.number_input("Short count", min_value=0, value=3, label_visibility="collapsed", key="s_c1")
         short_d1 = c3.selectbox("Short Diff", diff_options, label_visibility="collapsed", key="s_d1")
 
+        # FIX: सिर्फ एक Long Answer का Box यहाँ मौजूद है!
         c1.write("Long Answer")
         long_t1 = c2.number_input("Long count", min_value=0, value=2, label_visibility="collapsed", key="l_c1")
         long_d1 = c3.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d1")
@@ -290,6 +289,7 @@ with tab2:
         short_t2 = c5.number_input("Short count", min_value=0, value=3, label_visibility="collapsed", key="s_c2")
         short_d2 = c6.selectbox("Short Diff", diff_options, label_visibility="collapsed", key="s_d2")
 
+        # FIX: सिर्फ एक Long Answer का Box यहाँ मौजूद है!
         c4.write("Long Answer")
         long_t2 = c5.number_input("Long count", min_value=0, value=2, label_visibility="collapsed", key="l_c2")
         long_d2 = c6.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d2")
