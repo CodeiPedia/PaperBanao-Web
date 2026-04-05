@@ -2,7 +2,6 @@ import streamlit as st
 import google.generativeai as genai
 import PyPDF2
 import os
-from PIL import Image
 
 # --- Page Config ---
 st.set_page_config(page_title="PaperBanao - AI Question Paper", page_icon="📝", layout="centered")
@@ -24,8 +23,21 @@ with col_title:
 st.sidebar.header("⚙️ System Settings")
 api_key = st.sidebar.text_input("Enter Google Gemini API Key:", type="password")
 
+# --- AUTO-DETECT MODEL LOGIC ---
+working_model_name = "gemini-1.5-flash" # Fallback Default
 if api_key:
     genai.configure(api_key=api_key)
+    try:
+        # यह code आपके API key पर मौजूद चालू models की list निकालेगा
+        valid_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        if valid_models:
+            # 1.5 flash ढूँढने की कोशिश करेगा, नहीं मिला तो जो भी चालू है वो उठा लेगा
+            flash_models = [m for m in valid_models if '1.5-flash' in m]
+            working_model_name = flash_models[0] if flash_models else valid_models[0]
+            
+        st.sidebar.success("✅ API Connected!")
+    except Exception as e:
+        st.sidebar.error("Invalid API Key or Network Issue.")
 else:
     st.sidebar.warning("Please enter your API key to start.")
 
@@ -152,8 +164,8 @@ with tab1:
                 {q_reqs1}
                 """
                 try:
-                    # FIX APPLIED HERE: Using stable gemini-pro model
-                    model = genai.GenerativeModel('gemini-pro')
+                    # MAGIC HAPPENS HERE: It uses the auto-detected model
+                    model = genai.GenerativeModel(working_model_name)
                     response = model.generate_content(prompt1)
                     st.success("Success! Your paper is ready.")
                     
@@ -251,8 +263,8 @@ with tab2:
                 ---
                 """
                 try:
-                    # FIX APPLIED HERE: Using stable gemini-pro model
-                    model = genai.GenerativeModel('gemini-pro')
+                    # MAGIC HAPPENS HERE: It uses the auto-detected model
+                    model = genai.GenerativeModel(working_model_name)
                     response = model.generate_content(prompt2)
                     st.success("Success! Your paper is ready.")
                     
