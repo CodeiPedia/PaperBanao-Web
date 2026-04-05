@@ -124,7 +124,14 @@ if SERVER_API_KEY == "ENTER_YOUR_GEMINI_API_KEY_HERE":
     st.stop()
 else:
     genai.configure(api_key=SERVER_API_KEY)
-    working_model_name = "gemini-1.5-flash"
+    
+    # ✅ THE FIX: Auto-Detect Best Available Gemini Model
+    try:
+        valid_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        flash_models = [m for m in valid_models if '1.5-flash' in m]
+        working_model_name = flash_models[0] if flash_models else valid_models[0]
+    except Exception as e:
+        working_model_name = "models/gemini-1.5-flash-latest" # Fallback Backup
 
 user_data = get_user_data(st.session_state.username)
 papers_used = user_data[0]
