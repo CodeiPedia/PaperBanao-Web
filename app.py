@@ -90,4 +90,187 @@ def get_board_instructions(board):
     if board == "CBSE":
         return "CRITICAL BOARD FORMAT: Structure the paper strictly matching CBSE board exam patterns. Group questions logically into Sections. Add standard CBSE General Instructions at the top."
     elif board == "ICSE":
-        return "CRITICAL BOARD FORMAT: Structure the paper strictly matching ICSE board exam patterns. Add standard
+        return "CRITICAL BOARD FORMAT: Structure the paper strictly matching ICSE board exam patterns. Add standard ICSE General Instructions."
+    elif board == "BSEB (Bihar Board)":
+        return "CRITICAL BOARD FORMAT: Structure the paper strictly matching BSEB (Bihar School Examination Board) patterns. Divide into 'Section-A: Objective Type' and 'Section-B: Subjective Type'. Add standard BSEB General Instructions."
+    else:
+        return "Format the paper beautifully as a standard ready-to-print exam paper with clear sections."
+
+def get_language_instructions(lang):
+    if lang == "Hindi":
+        return "CRITICAL LANGUAGE FORMAT: Generate the ENTIRE exam paper (including all instructions, section names, and questions) strictly in Hindi language."
+    elif lang == "Bilingual (English + Hindi)":
+        return "CRITICAL LANGUAGE FORMAT: Generate the exam paper in a BILINGUAL format. For every instruction and every question, write it first in English, immediately followed by its exact translation in Hindi below it."
+    else:
+        return "CRITICAL LANGUAGE FORMAT: Generate the paper in English."
+
+def create_a4_html(md_content):
+    md_content = md_content.replace("# Answer Key", "<div style='page-break-before: always;'></div>\n# Answer Key")
+    md_content = md_content.replace("# ANSWER KEY", "<div style='page-break-before: always;'></div>\n# ANSWER KEY")
+    md_content = md_content.replace("## Answer Key", "<div style='page-break-before: always;'></div>\n## Answer Key")
+
+    html_body = markdown.markdown(md_content)
+    
+    html_template = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Question Paper</title>
+        <script>
+          MathJax = {{ tex: {{ inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] }} }};
+        </script>
+        <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+        <style>
+            body {{ background-color: #f0f0f0; font-family: 'Times New Roman', Times, serif; margin: 0; padding: 20px; display: flex; justify-content: center; }}
+            .a4-page {{ background-color: white; width: 210mm; min-height: 297mm; padding: 20mm; box-sizing: border-box; box-shadow: 0 0 10px rgba(0,0,0,0.2); }}
+            @media print {{ body {{ background-color: white; padding: 0; display: block; }} .a4-page {{ box-shadow: none; width: 100%; padding: 0; margin: 0; }} @page {{ size: A4; margin: 20mm; }} }}
+            h1, h2, h3 {{ text-align: center; color: #111; }} p, li {{ font-size: 16px; line-height: 1.5; color: #000; }} hr {{ border: 1px solid #ccc; margin: 20px 0; }}
+            mjx-container {{ max-width: 100%; overflow-x: auto; overflow-y: hidden; }}
+        </style>
+    </head>
+    <body>
+        <div class="a4-page">
+            {html_body}
+        </div>
+    </body>
+    </html>
+    """
+    return html_template
+
+# ==========================================
+# --- 1. CHOOSE PAPER SOURCE (TOP) ---
+# ==========================================
+st.markdown("### 1. Choose Paper Source")
+source_choice = st.radio(
+    "Select Method:", 
+    ["⚡ Quick Generate (By Syllabus)", "📄 Deep Extract (From PDF Book)"], 
+    horizontal=True, 
+    label_visibility="collapsed"
+)
+
+sub1, grade1, syl1 = "", "", ""
+up_pdf, start_p, end_p, sub2, top2 = None, 1, 5, "", ""
+
+if "Syllabus" in source_choice:
+    st.info("Best for general tests without strict textbook boundaries.")
+    col1, col2 = st.columns(2)
+    with col1: sub1 = st.text_input("Subject (e.g., Science)")
+    with col2: grade1 = st.text_input("Class / Grade")
+    syl1 = st.text_area("Paste Syllabus or Topics to Cover", placeholder="e.g., Light reflection, Newton's laws...")
+else:
+    st.info("Best when you want questions extracted ONLY from the provided text.")
+    up_pdf = st.file_uploader("Upload Book/Chapter (PDF)", type="pdf")
+    col4, col5 = st.columns(2)
+    with col4: start_p = st.number_input("Start Page", min_value=1, value=1)
+    with col5: end_p = st.number_input("End Page", min_value=1, value=5)
+    col6, col7 = st.columns(2)
+    with col6: sub2 = st.text_input("Subject")
+    with col7: top2 = st.text_input("Specific Topic (e.g., Basic Electricity)")
+
+st.markdown("---")
+
+# ==========================================
+# --- 2. SET QUESTIONS & DIFFICULTY (BOTTOM) ---
+# ==========================================
+st.markdown("### 2. Set Questions & Difficulty")
+diff_options = ["Easy", "Medium", "Hard", "Mixed"]
+
+h1, h2, h3 = st.columns([2, 1, 2])
+h1.markdown("**Question Type**")
+h2.markdown("**Count**")
+h3.markdown("**Difficulty**")
+
+c1, c2, c3 = st.columns([2, 1, 2])
+with c1: st.markdown("<div style='padding-top: 10px;'>Multiple Choice (MCQs)</div>", unsafe_allow_html=True)
+with c2: mcq_c = st.number_input("MCQ count", min_value=0, value=5, label_visibility="collapsed", key="m_c")
+with c3: mcq_d = st.selectbox("MCQ Diff", diff_options, label_visibility="collapsed", key="m_d")
+
+c1, c2, c3 = st.columns([2, 1, 2])
+with c1: st.markdown("<div style='padding-top: 10px;'>Fill in the Blanks</div>", unsafe_allow_html=True)
+with c2: fib_c = st.number_input("FIB count", min_value=0, value=3, label_visibility="collapsed", key="f_c")
+with c3: fib_d = st.selectbox("FIB Diff", diff_options, label_visibility="collapsed", key="f_d")
+
+c1, c2, c3 = st.columns([2, 1, 2])
+with c1: st.markdown("<div style='padding-top: 10px;'>True / False</div>", unsafe_allow_html=True)
+with c2: tf_c = st.number_input("TF count", min_value=0, value=3, label_visibility="collapsed", key="t_c")
+with c3: tf_d = st.selectbox("TF Diff", diff_options, label_visibility="collapsed", key="t_d")
+
+c1, c2, c3 = st.columns([2, 1, 2])
+with c1: st.markdown("<div style='padding-top: 10px;'>Short Answer (2-3 Lines)</div>", unsafe_allow_html=True)
+with c2: short_c = st.number_input("Short count", min_value=0, value=3, label_visibility="collapsed", key="s_c")
+with c3: short_d = st.selectbox("Short Diff", diff_options, label_visibility="collapsed", key="s_d")
+
+c1, c2, c3 = st.columns([2, 1, 2])
+with c1: st.markdown("<div style='padding-top: 10px;'>Long Answer (Detailed)</div>", unsafe_allow_html=True)
+with c2: long_c = st.number_input("Long count", min_value=0, value=2, label_visibility="collapsed", key="l_c")
+with c3: long_d = st.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d")
+
+st.markdown("---")
+
+# ==========================================
+# --- 3. GENERATE BUTTON (VERY BOTTOM) ---
+# ==========================================
+generate_btn = st.button("🚀 Generate Exam Paper", use_container_width=True)
+
+if generate_btn:
+    if not api_key:
+        st.error("API Key is missing! Please add it in the sidebar.")
+    else:
+        total_q = mcq_c + fib_c + tf_c + short_c + long_c
+        q_reqs = build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d)
+        board_rules = get_board_instructions(board_format)
+        lang_rules = get_language_instructions(paper_language)
+        
+        # --- LOGIC FOR SYLLABUS ---
+        if "Syllabus" in source_choice:
+            if not sub1 or not syl1:
+                st.error("Please fill in the Subject and Syllabus details.")
+            else:
+                with st.spinner(f"Generating {board_format} Paper in {paper_language}..."):
+                    header = f"""# {inst_name}\n**Class:** {grade1} | **Subject:** {sub1} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"""
+                    prompt = f"You are an expert educator. Create an exam paper covering strictly: {syl1}\n{board_rules}\n{lang_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header}\nGenerate exactly the following questions:\n{q_reqs}"
+                    
+                    try:
+                        model = genai.GenerativeModel(working_model_name)
+                        response = model.generate_content(prompt)
+                        st.success("Success! Your paper is ready.")
+                        
+                        st.markdown("---")
+                        if inst_logo is not None:
+                            col_img = st.columns([2, 1, 2])[1]
+                            col_img.image(inst_logo, width=150)
+                        st.markdown(response.text)
+                        st.markdown("---")
+                        
+                        final_html = create_a4_html(response.text)
+                        st.download_button("🖨️ Download A4 Paper (HTML/PDF)", data=final_html, file_name=f"{sub1}_Paper.html", mime="text/html")
+                    except Exception as e:
+                        st.error(f"API Error: {e}")
+                        
+        # --- LOGIC FOR PDF ---
+        else:
+            if not up_pdf or not sub2 or not top2:
+                st.error("Please upload the PDF and fill in the Subject and Topic.")
+            else:
+                with st.spinner(f"Reading PDF & Generating {board_format} Paper in {paper_language}..."):
+                    document_text = extract_text_from_pdf(up_pdf, start_p, end_p)
+                    header = f"""# {inst_name}\n**Subject:** {sub2} | **Topic:** {top2} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"""
+                    prompt = f"You are an expert exam creator. Generate an exam ONLY for the topic requested below using the provided text.\n- Subject: {sub2}\n- Target Topic: {top2}\nCRITICAL INSTRUCTIONS:\n1. Ignore any text NOT related to '{top2}'.\n2. Extract questions STRICTLY from the text provided below.\n{board_rules}\n{lang_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header}\nGenerate exactly the following questions:\n{q_reqs}\nTextbook text:\n---\n{document_text}\n---"
+                    
+                    try:
+                        model = genai.GenerativeModel(working_model_name)
+                        response = model.generate_content(prompt)
+                        st.success("Success! Your paper is ready.")
+                        
+                        st.markdown("---")
+                        if inst_logo is not None:
+                            col_img = st.columns([2, 1, 2])[1]
+                            col_img.image(inst_logo, width=150)
+                        st.markdown(response.text)
+                        st.markdown("---")
+                        
+                        final_html = create_a4_html(response.text)
+                        st.download_button("🖨️ Download A4 Paper (HTML/PDF)", data=final_html, file_name=f"{top2}_Paper.html", mime="text/html")
+                    except Exception as e:
+                        st.error(f"API Error: {e}")
