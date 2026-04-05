@@ -104,12 +104,7 @@ def create_a4_html(md_content):
         <meta charset="UTF-8">
         <title>Question Paper</title>
         <script>
-          MathJax = {{
-            tex: {{
-              inlineMath: [['$', '$'], ['\\\\(', '\\\\)']],
-              displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']]
-            }}
-          }};
+          MathJax = {{ tex: {{ inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] }} }};
         </script>
         <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
         <style>
@@ -129,10 +124,46 @@ def create_a4_html(md_content):
     """
     return html_template
 
+
 # ==========================================
-# --- 1. GLOBAL QUESTION SETUP (PERFECT ALIGNMENT) ---
+# --- 1. CHOOSE PAPER SOURCE (TOP) ---
 # ==========================================
-st.markdown("### 1. Set Questions & Difficulty")
+st.markdown("### 1. Choose Paper Source")
+source_choice = st.radio(
+    "Select Method:", 
+    ["⚡ Quick Generate (By Syllabus)", "📄 Deep Extract (From PDF Book)"], 
+    horizontal=True, 
+    label_visibility="collapsed"
+)
+
+# Variables to store inputs based on choice
+sub1, grade1, syl1 = "", "", ""
+up_pdf, start_p, end_p, sub2, top2 = None, 1, 5, "", ""
+
+if "Syllabus" in source_choice:
+    st.info("Best for general tests without strict textbook boundaries.")
+    col1, col2 = st.columns(2)
+    with col1: sub1 = st.text_input("Subject (e.g., Science)")
+    with col2: grade1 = st.text_input("Class / Grade")
+    syl1 = st.text_area("Paste Syllabus or Topics to Cover", placeholder="e.g., Light reflection, Newton's laws...")
+
+else:
+    st.info("Best when you want questions extracted ONLY from the provided text.")
+    up_pdf = st.file_uploader("Upload Book/Chapter (PDF)", type="pdf")
+    col4, col5 = st.columns(2)
+    with col4: start_p = st.number_input("Start Page", min_value=1, value=1)
+    with col5: end_p = st.number_input("End Page", min_value=1, value=5)
+    col6, col7 = st.columns(2)
+    with col6: sub2 = st.text_input("Subject")
+    with col7: top2 = st.text_input("Specific Topic (e.g., Basic Electricity)")
+
+
+st.markdown("---")
+
+# ==========================================
+# --- 2. SET QUESTIONS & DIFFICULTY (BOTTOM) ---
+# ==========================================
+st.markdown("### 2. Set Questions & Difficulty")
 diff_options = ["Easy", "Medium", "Hard", "Mixed"]
 
 # Headers
@@ -171,111 +202,71 @@ with c1: st.markdown("<div style='padding-top: 10px;'>Long Answer (Detailed)</di
 with c2: long_c = st.number_input("Long count", min_value=0, value=2, label_visibility="collapsed", key="l_c")
 with c3: long_d = st.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d")
 
+
 st.markdown("---")
 
 # ==========================================
-# --- 2. CHOOSE GENERATION METHOD ---
+# --- 3. GENERATE BUTTON (VERY BOTTOM) ---
 # ==========================================
-st.markdown("### 2. Choose Paper Source")
-tab1, tab2 = st.tabs(["⚡ Quick Generate (By Syllabus)", "📄 Deep Extract (From PDF Book)"])
+generate_btn = st.button("🚀 Generate Exam Paper", use_container_width=True)
 
-# ------------------------------------------
-# TAB 1: SYLLABUS BASED
-# ------------------------------------------
-with tab1:
-    with st.form("quick_gen_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            subject_t1 = st.text_input("Subject (e.g., Science)")
-        with col2:
-            grade_t1 = st.text_input("Class / Grade")
-            
-        syllabus_t1 = st.text_area("Paste Syllabus or Topics to Cover", placeholder="e.g., Light reflection, Newton's laws...")
-        submit_t1 = st.form_submit_button("🚀 Generate Paper from Syllabus")
-
-    if submit_t1:
-        if not api_key: st.error("API Key is missing!")
-        elif not subject_t1 or not syllabus_t1: st.error("Please fill in the Subject and Syllabus.")
-        else:
-            with st.spinner(f"Generating {board_format} Paper... Please wait."):
-                total_q = mcq_c + fib_c + tf_c + short_c + long_c
-                q_reqs = build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d)
-                board_rules = get_board_instructions(board_format)
-                
-                header1 = f"""
-# {inst_name}
-**Class:** {grade_t1} | **Subject:** {subject_t1} | **Pattern:** {board_format}  
-**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}
-***
-                """
-                prompt1 = f"""You are an expert educator. Create an exam paper covering strictly: {syllabus_t1}\n{board_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header1}\nGenerate exactly the following questions:\n{q_reqs}"""
-                
-                try:
-                    model = genai.GenerativeModel(working_model_name)
-                    response = model.generate_content(prompt1)
-                    st.success("Success! Your paper is ready.")
-                    
-                    st.markdown("---")
-                    if inst_logo is not None:
-                        col_space1, col_img, col_space2 = st.columns([2, 1, 2])
-                        with col_img: st.image(inst_logo, width=150)
-                    st.markdown(response.text)
-                    st.markdown("---")
-                    
-                    final_html = create_a4_html(response.text)
-                    st.download_button(label="🖨️ Download A4 Paper (HTML/PDF)", data=final_html, file_name=f"{subject_t1}_Paper.html", mime="text/html")
-                except Exception as e:
-                    st.error(f"API Error: {e}")
-
-# ------------------------------------------
-# TAB 2: PDF BASED
-# ------------------------------------------
-with tab2:
-    with st.form("pdf_gen_form"):
-        uploaded_pdf = st.file_uploader("Upload Book/Chapter (PDF)", type="pdf")
+if generate_btn:
+    if not api_key:
+        st.error("API Key is missing! Please add it in the sidebar.")
+    else:
+        total_q = mcq_c + fib_c + tf_c + short_c + long_c
+        q_reqs = build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d)
+        board_rules = get_board_instructions(board_format)
         
-        col4, col5 = st.columns(2)
-        with col4: start_p = st.number_input("Start Page", min_value=1, value=1)
-        with col5: end_p = st.number_input("End Page", min_value=1, value=5)
-            
-        col6, col7 = st.columns(2)
-        with col6: subject_t2 = st.text_input("Subject")
-        with col7: topic_t2 = st.text_input("Specific Topic")
-            
-        submit_t2 = st.form_submit_button("📑 Extract & Generate from PDF")
-
-    if submit_t2:
-        if not api_key: st.error("API Key is missing!")
-        elif not uploaded_pdf: st.error("Please upload a PDF document.")
-        elif not subject_t2 or not topic_t2: st.error("Please fill in the Subject and Topic.")
+        # --- LOGIC FOR SYLLABUS ---
+        if "Syllabus" in source_choice:
+            if not sub1 or not syl1:
+                st.error("Please fill in the Subject and Syllabus details.")
+            else:
+                with st.spinner(f"Generating {board_format} Paper from Syllabus..."):
+                    header = f"""# {inst_name}\n**Class:** {grade1} | **Subject:** {sub1} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"""
+                    prompt = f"You are an expert educator. Create an exam paper covering strictly: {syl1}\n{board_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header}\nGenerate exactly the following questions:\n{q_reqs}"
+                    
+                    try:
+                        model = genai.GenerativeModel(working_model_name)
+                        response = model.generate_content(prompt)
+                        st.success("Success! Your paper is ready.")
+                        
+                        st.markdown("---")
+                        if inst_logo is not None:
+                            col_img = st.columns([2, 1, 2])[1]
+                            col_img.image(inst_logo, width=150)
+                        st.markdown(response.text)
+                        st.markdown("---")
+                        
+                        final_html = create_a4_html(response.text)
+                        st.download_button("🖨️ Download A4 Paper (HTML/PDF)", data=final_html, file_name=f"{sub1}_Paper.html", mime="text/html")
+                    except Exception as e:
+                        st.error(f"API Error: {e}")
+                        
+        # --- LOGIC FOR PDF ---
         else:
-            with st.spinner(f"Reading PDF & Generating {board_format} Paper... Please wait."):
-                document_text = extract_text_from_pdf(uploaded_pdf, start_p, end_p)
-                total_q = mcq_c + fib_c + tf_c + short_c + long_c
-                q_reqs = build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d)
-                board_rules = get_board_instructions(board_format)
-                
-                header2 = f"""
-# {inst_name}
-**Subject:** {subject_t2} | **Topic:** {topic_t2} | **Pattern:** {board_format}  
-**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}
-***
-                """
-                prompt2 = f"""You are an expert exam creator. Generate an exam ONLY for the topic requested below using the provided text.\n- Subject: {subject_t2}\n- Target Topic: {topic_t2}\nCRITICAL INSTRUCTIONS:\n1. Ignore any text NOT related to '{topic_t2}'.\n2. Extract questions STRICTLY from the text provided below.\n{board_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header2}\nGenerate exactly the following questions:\n{q_reqs}\nTextbook text:\n---\n{document_text}\n---"""
-                
-                try:
-                    model = genai.GenerativeModel(working_model_name)
-                    response = model.generate_content(prompt2)
-                    st.success("Success! Your paper is ready.")
+            if not up_pdf or not sub2 or not top2:
+                st.error("Please upload the PDF and fill in the Subject and Topic.")
+            else:
+                with st.spinner(f"Reading PDF & Generating {board_format} Paper..."):
+                    document_text = extract_text_from_pdf(up_pdf, start_p, end_p)
+                    header = f"""# {inst_name}\n**Subject:** {sub2} | **Topic:** {top2} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"""
+                    prompt = f"You are an expert exam creator. Generate an exam ONLY for the topic requested below using the provided text.\n- Subject: {sub2}\n- Target Topic: {top2}\nCRITICAL INSTRUCTIONS:\n1. Ignore any text NOT related to '{top2}'.\n2. Extract questions STRICTLY from the text provided below.\n{board_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header}\nGenerate exactly the following questions:\n{q_reqs}\nTextbook text:\n---\n{document_text}\n---"
                     
-                    st.markdown("---")
-                    if inst_logo is not None:
-                        col_space3, col_img2, col_space4 = st.columns([2, 1, 2])
-                        with col_img2: st.image(inst_logo, width=150)
-                    st.markdown(response.text)
-                    st.markdown("---")
-                    
-                    final_html = create_a4_html(response.text)
-                    st.download_button(label="🖨️ Download A4 Paper (HTML/PDF)", data=final_html, file_name=f"{topic_t2}_Paper.html", mime="text/html")
-                except Exception as e:
-                    st.error(f"API Error: {e}")
+                    try:
+                        model = genai.GenerativeModel(working_model_name)
+                        response = model.generate_content(prompt)
+                        st.success("Success! Your paper is ready.")
+                        
+                        st.markdown("---")
+                        if inst_logo is not None:
+                            col_img = st.columns([2, 1, 2])[1]
+                            col_img.image(inst_logo, width=150)
+                        st.markdown(response.text)
+                        st.markdown("---")
+                        
+                        final_html = create_a4_html(response.text)
+                        st.download_button("🖨️ Download A4 Paper (HTML/PDF)", data=final_html, file_name=f"{top2}_Paper.html", mime="text/html")
+                    except Exception as e:
+                        st.error(f"API Error: {e}")
