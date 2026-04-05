@@ -116,7 +116,6 @@ def get_language_instructions(lang):
     elif lang == "Bilingual (English + Hindi)": return "CRITICAL LANGUAGE FORMAT: Generate the exam paper in a BILINGUAL format. For every instruction and every question, write it first in English, immediately followed by its exact translation in Hindi below it."
     else: return "CRITICAL LANGUAGE FORMAT: Generate the paper in English."
 
-# UPDATED: Passing Branding details to HTML
 def create_a4_html(md_content, i_name, i_address, i_contact):
     md_content = md_content.replace("# Answer Key", "<div style='page-break-before: always;'></div>\n# Answer Key")
     md_content = md_content.replace("# ANSWER KEY", "<div style='page-break-before: always;'></div>\n# ANSWER KEY")
@@ -124,7 +123,6 @@ def create_a4_html(md_content, i_name, i_address, i_contact):
 
     html_body = markdown.markdown(md_content)
     
-    # Custom Footer HTML
     footer_html = f"""
     <div class="footer">
         <p><strong>{i_name}</strong> | 📍 {i_address} | 📞 {i_contact}</p>
@@ -277,6 +275,9 @@ if st.session_state.paper_content:
     st.markdown("### ✍️ 4. Edit Your Paper & Download")
     st.info("You can type in the box below to make any changes. Your edits will be saved in the downloaded file!")
     
+    # --- PRO TIP ADDED HERE ---
+    st.success("💡 **Pro Tip for Diagrams:** Need an image or diagram in your paper? Just leave some blank space (press Enter a few times) in the editor below. After downloading the A4 HTML, open it in MS Word/Chrome and paste your images directly into that space before printing!")
+    
     edited_paper = st.text_area("Live Editor (Markdown format):", value=st.session_state.paper_content, height=450)
     
     with st.expander("👁️ Preview Final Paper Layout", expanded=False):
@@ -287,7 +288,6 @@ if st.session_state.paper_content:
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # PASSING BRANDING DETAILS TO HTML GENERATOR
     final_html = create_a4_html(edited_paper, inst_name, inst_address, inst_contact)
     
     st.download_button(
