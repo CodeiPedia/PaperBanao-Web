@@ -17,7 +17,6 @@ from supabase import create_client, Client
 st.set_page_config(page_title="PaperBanao - AI Question Paper", page_icon="📝", layout="centered")
 
 # ==========================================
-# ==========================================
 # --- 🛑 SECRETS: PULLING KEYS SECURELY ---
 # ==========================================
 SERVER_API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -36,6 +35,7 @@ def init_supabase():
         return None
 
 supabase: Client = init_supabase()
+
 # --- DB HELPER FUNCTIONS (NOW USING CLOUD) ---
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -125,13 +125,13 @@ if SERVER_API_KEY == "ENTER_YOUR_GEMINI_API_KEY_HERE":
 else:
     genai.configure(api_key=SERVER_API_KEY)
     
-    # ✅ THE FIX: Auto-Detect Best Available Gemini Model
+    # Auto-Detect Best Available Gemini Model
     try:
         valid_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         flash_models = [m for m in valid_models if '1.5-flash' in m]
         working_model_name = flash_models[0] if flash_models else valid_models[0]
     except Exception as e:
-        working_model_name = "models/gemini-1.5-flash-latest" # Fallback Backup
+        working_model_name = "models/gemini-1.5-flash-latest"
 
 user_data = get_user_data(st.session_state.username)
 papers_used = user_data[0]
@@ -341,31 +341,40 @@ with tab_create:
     # ==========================================
     if st.session_state.blocks:
         st.markdown("---")
-        st.markdown("### 🧩 Question Bank Manager")
         
-        for i, block in enumerate(st.session_state.blocks):
-            with st.container(border=True):
-                st.session_state.blocks[i]['text'] = st.text_area(f"Block {i}", value=block['text'], key=f"edit_{block['id']}", height=120, label_visibility="collapsed")
-                
-                col1, col2, col3 = st.columns([1, 1, 4])
-                with col1:
-                    if st.button("🗑️ Delete", key=f"del_{block['id']}", use_container_width=True):
-                        if f"edit_{block['id']}" in st.session_state: del st.session_state[f"edit_{block['id']}"]
-                        st.session_state.blocks.pop(i)
-                        st.rerun()
-                with col2:
-                    if st.button("🔄 Regenerate", key=f"reg_{block['id']}", use_container_width=True):
-                        with st.spinner("Generating..."):
-                            new_text = regenerate_single_question(block['text'])
-                            st.session_state.blocks[i]['text'] = new_text
+        # ✅ THE FIX: Question Bank Manager now hidden behind a button/expander
+        with st.expander("🛠️ Open Question Bank Manager (Edit / Delete / Regenerate)", expanded=False):
+            st.success("💡 **Pro Tip:** You can edit the text inside any box below. Don't like a question? Click **Regenerate** to get a new one, or **Delete** to remove it completely!")
+            
+            for i, block in enumerate(st.session_state.blocks):
+                with st.container(border=True):
+                    st.session_state.blocks[i]['text'] = st.text_area(f"Block {i}", value=block['text'], key=f"edit_{block['id']}", height=120, label_visibility="collapsed")
+                    
+                    col1, col2, col3 = st.columns([1, 1, 4])
+                    with col1:
+                        if st.button("🗑️ Delete", key=f"del_{block['id']}", use_container_width=True):
                             if f"edit_{block['id']}" in st.session_state: del st.session_state[f"edit_{block['id']}"]
+                            st.session_state.blocks.pop(i)
                             st.rerun()
+                    with col2:
+                        if st.button("🔄 Regenerate", key=f"reg_{block['id']}", use_container_width=True):
+                            with st.spinner("Generating..."):
+                                new_text = regenerate_single_question(block['text'])
+                                st.session_state.blocks[i]['text'] = new_text
+                                if f"edit_{block['id']}" in st.session_state: del st.session_state[f"edit_{block['id']}"]
+                                st.rerun()
 
+        # Download & Preview Section is outside the expander, always visible after generation
         final_markdown_paper = "\n\n".join([b['text'] for b in st.session_state.blocks])
         
-        st.markdown("---")
         st.markdown("### 🖨️ Finalize & Download")
         
+        with st.expander("👁️ Preview Final Paper Layout", expanded=False):
+            if inst_logo is not None:
+                col_img = st.columns([2, 1, 2])[1]
+                col_img.image(inst_logo, width=150)
+            st.markdown(final_markdown_paper)
+            
         final_html = create_a4_html(final_markdown_paper, inst_name, inst_address, inst_contact)
         final_word = create_word_docx(final_markdown_paper, inst_name, inst_address, inst_contact)
         
