@@ -1,6 +1,6 @@
 streamlit
 google-generativeai
 PyPDF2
-markdown
+Markdown
 python-docx
-
+supabase
