@@ -3,15 +3,46 @@ import google.generativeai as genai
 import PyPDF2
 import os
 import markdown
+import sqlite3
+from datetime import datetime
 
 # --- Page Config ---
 st.set_page_config(page_title="PaperBanao - AI Question Paper", page_icon="📝", layout="centered")
 
-# --- INITIALIZE SESSION STATE (MEMORY FOR EDITING) ---
+# ==========================================
+# --- DATABASE INITIALIZATION (SQLITE) ---
+# ==========================================
+def init_db():
+    conn = sqlite3.connect('paperbanao.db')
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS papers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT,
+            subject TEXT,
+            board TEXT,
+            content TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db() # Run database initialization
+
+def delete_paper(paper_id):
+    conn = sqlite3.connect('paperbanao.db')
+    c = conn.cursor()
+    c.execute("DELETE FROM papers WHERE id=?", (paper_id,))
+    conn.commit()
+    conn.close()
+
+# --- INITIALIZE SESSION STATE (MEMORY) ---
 if "paper_content" not in st.session_state:
     st.session_state.paper_content = ""
 if "file_name" not in st.session_state:
     st.session_state.file_name = "PaperBanao_Exam.html"
+if "current_subject" not in st.session_state:
+    st.session_state.current_subject = "Unknown Subject"
 
 # --- App Header & App Logo ---
 col_logo, col_title = st.columns([1, 5])
@@ -162,138 +193,185 @@ def create_a4_html(md_content, i_name, i_address, i_contact):
     """
     return html_template
 
-# ==========================================
-# --- 1. CHOOSE PAPER SOURCE (TOP) ---
-# ==========================================
-st.markdown("### 1. Choose Paper Source")
-source_choice = st.radio("Select Method:", ["⚡ Quick Generate (By Syllabus)", "📄 Deep Extract (From PDF Book)"], horizontal=True, label_visibility="collapsed")
-
-sub1, grade1, syl1 = "", "", ""
-up_pdf, start_p, end_p, sub2, top2 = None, 1, 5, "", ""
-
-if "Syllabus" in source_choice:
-    st.info("Best for general tests without strict textbook boundaries.")
-    col1, col2 = st.columns(2)
-    with col1: sub1 = st.text_input("Subject (e.g., Science)")
-    with col2: grade1 = st.text_input("Class / Grade")
-    syl1 = st.text_area("Paste Syllabus or Topics to Cover", placeholder="e.g., Light reflection, Newton's laws...")
-else:
-    st.info("Best when you want questions extracted ONLY from the provided text.")
-    up_pdf = st.file_uploader("Upload Book/Chapter (PDF)", type="pdf")
-    col4, col5 = st.columns(2)
-    with col4: start_p = st.number_input("Start Page", min_value=1, value=1)
-    with col5: end_p = st.number_input("End Page", min_value=1, value=5)
-    col6, col7 = st.columns(2)
-    with col6: sub2 = st.text_input("Subject")
-    with col7: top2 = st.text_input("Specific Topic (e.g., Basic Electricity)")
-
-st.markdown("---")
 
 # ==========================================
-# --- 2. SET QUESTIONS & DIFFICULTY (BOTTOM) ---
+# --- MAIN LAYOUT: TABS FOR APP NAVIGATION ---
 # ==========================================
-st.markdown("### 2. Set Questions & Difficulty")
-diff_options = ["Easy", "Medium", "Hard", "Mixed"]
+tab_create, tab_history = st.tabs(["🏠 Create New Paper", "🗂️ Past Papers History"])
 
-h1, h2, h3 = st.columns([2, 1, 2])
-h1.markdown("**Question Type**")
-h2.markdown("**Count**")
-h3.markdown("**Difficulty**")
+# ------------------------------------------
+# TAB 1: CREATE NEW PAPER (All previous logic goes here)
+# ------------------------------------------
+with tab_create:
+    st.markdown("### 1. Choose Paper Source")
+    source_choice = st.radio("Select Method:", ["⚡ Quick Generate (By Syllabus)", "📄 Deep Extract (From PDF Book)"], horizontal=True, label_visibility="collapsed")
 
-c1, c2, c3 = st.columns([2, 1, 2])
-with c1: st.markdown("<div style='padding-top: 10px;'>Multiple Choice (MCQs)</div>", unsafe_allow_html=True)
-with c2: mcq_c = st.number_input("MCQ count", min_value=0, value=5, label_visibility="collapsed", key="m_c")
-with c3: mcq_d = st.selectbox("MCQ Diff", diff_options, label_visibility="collapsed", key="m_d")
+    sub1, grade1, syl1 = "", "", ""
+    up_pdf, start_p, end_p, sub2, top2 = None, 1, 5, "", ""
 
-c1, c2, c3 = st.columns([2, 1, 2])
-with c1: st.markdown("<div style='padding-top: 10px;'>Fill in the Blanks</div>", unsafe_allow_html=True)
-with c2: fib_c = st.number_input("FIB count", min_value=0, value=3, label_visibility="collapsed", key="f_c")
-with c3: fib_d = st.selectbox("FIB Diff", diff_options, label_visibility="collapsed", key="f_d")
-
-c1, c2, c3 = st.columns([2, 1, 2])
-with c1: st.markdown("<div style='padding-top: 10px;'>True / False</div>", unsafe_allow_html=True)
-with c2: tf_c = st.number_input("TF count", min_value=0, value=3, label_visibility="collapsed", key="t_c")
-with c3: tf_d = st.selectbox("TF Diff", diff_options, label_visibility="collapsed", key="t_d")
-
-c1, c2, c3 = st.columns([2, 1, 2])
-with c1: st.markdown("<div style='padding-top: 10px;'>Short Answer (2-3 Lines)</div>", unsafe_allow_html=True)
-with c2: short_c = st.number_input("Short count", min_value=0, value=3, label_visibility="collapsed", key="s_c")
-with c3: short_d = st.selectbox("Short Diff", diff_options, label_visibility="collapsed", key="s_d")
-
-c1, c2, c3 = st.columns([2, 1, 2])
-with c1: st.markdown("<div style='padding-top: 10px;'>Long Answer (Detailed)</div>", unsafe_allow_html=True)
-with c2: long_c = st.number_input("Long count", min_value=0, value=2, label_visibility="collapsed", key="l_c")
-with c3: long_d = st.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d")
-
-st.markdown("---")
-
-# ==========================================
-# --- 3. GENERATE BUTTON ---
-# ==========================================
-generate_btn = st.button("🚀 Generate Exam Paper", use_container_width=True)
-
-if generate_btn:
-    if not api_key:
-        st.error("API Key is missing! Please add it in the sidebar.")
+    if "Syllabus" in source_choice:
+        st.info("Best for general tests without strict textbook boundaries.")
+        col1, col2 = st.columns(2)
+        with col1: sub1 = st.text_input("Subject (e.g., Science)")
+        with col2: grade1 = st.text_input("Class / Grade")
+        syl1 = st.text_area("Paste Syllabus or Topics to Cover", placeholder="e.g., Light reflection, Newton's laws...")
     else:
-        total_q = mcq_c + fib_c + tf_c + short_c + long_c
-        q_reqs = build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d, include_answer_key)
-        board_rules = get_board_instructions(board_format)
-        lang_rules = get_language_instructions(paper_language)
-        
-        if "Syllabus" in source_choice:
-            if not sub1 or not syl1: st.error("Please fill in the Subject and Syllabus details.")
-            else:
-                with st.spinner(f"Generating {board_format} Paper in {paper_language}..."):
-                    header = f"""# {inst_name}\n**Class:** {grade1} | **Subject:** {sub1} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"""
-                    prompt = f"You are an expert educator. Create an exam paper covering strictly: {syl1}\n{board_rules}\n{lang_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header}\nGenerate exactly the following questions:\n{q_reqs}"
-                    try:
-                        model = genai.GenerativeModel(working_model_name)
-                        response = model.generate_content(prompt)
-                        st.session_state.paper_content = response.text
-                        st.session_state.file_name = f"{sub1}_Paper.html"
-                    except Exception as e: st.error(f"API Error: {e}")
-        else:
-            if not up_pdf or not sub2 or not top2: st.error("Please upload the PDF and fill in the Subject and Topic.")
-            else:
-                with st.spinner(f"Reading PDF & Generating {board_format} Paper in {paper_language}..."):
-                    document_text = extract_text_from_pdf(up_pdf, start_p, end_p)
-                    header = f"""# {inst_name}\n**Subject:** {sub2} | **Topic:** {top2} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"""
-                    prompt = f"You are an expert exam creator. Generate an exam ONLY for the topic requested below using the provided text.\n- Subject: {sub2}\n- Target Topic: {top2}\nCRITICAL INSTRUCTIONS:\n1. Ignore any text NOT related to '{top2}'.\n2. Extract questions STRICTLY from the text provided below.\n{board_rules}\n{lang_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header}\nGenerate exactly the following questions:\n{q_reqs}\nTextbook text:\n---\n{document_text}\n---"
-                    try:
-                        model = genai.GenerativeModel(working_model_name)
-                        response = model.generate_content(prompt)
-                        st.session_state.paper_content = response.text
-                        st.session_state.file_name = f"{top2}_Paper.html"
-                    except Exception as e: st.error(f"API Error: {e}")
+        st.info("Best when you want questions extracted ONLY from the provided text.")
+        up_pdf = st.file_uploader("Upload Book/Chapter (PDF)", type="pdf")
+        col4, col5 = st.columns(2)
+        with col4: start_p = st.number_input("Start Page", min_value=1, value=1)
+        with col5: end_p = st.number_input("End Page", min_value=1, value=5)
+        col6, col7 = st.columns(2)
+        with col6: sub2 = st.text_input("Subject")
+        with col7: top2 = st.text_input("Specific Topic (e.g., Basic Electricity)")
 
-# ==========================================
-# --- 4. LIVE EDIT & DOWNLOAD SECTION ---
-# ==========================================
-if st.session_state.paper_content:
     st.markdown("---")
-    st.markdown("### ✍️ 4. Edit Your Paper & Download")
-    st.info("You can type in the box below to make any changes. Your edits will be saved in the downloaded file!")
+
+    st.markdown("### 2. Set Questions & Difficulty")
+    diff_options = ["Easy", "Medium", "Hard", "Mixed"]
+
+    h1, h2, h3 = st.columns([2, 1, 2])
+    h1.markdown("**Question Type**")
+    h2.markdown("**Count**")
+    h3.markdown("**Difficulty**")
+
+    c1, c2, c3 = st.columns([2, 1, 2])
+    with c1: st.markdown("<div style='padding-top: 10px;'>Multiple Choice (MCQs)</div>", unsafe_allow_html=True)
+    with c2: mcq_c = st.number_input("MCQ count", min_value=0, value=5, label_visibility="collapsed", key="m_c")
+    with c3: mcq_d = st.selectbox("MCQ Diff", diff_options, label_visibility="collapsed", key="m_d")
+
+    c1, c2, c3 = st.columns([2, 1, 2])
+    with c1: st.markdown("<div style='padding-top: 10px;'>Fill in the Blanks</div>", unsafe_allow_html=True)
+    with c2: fib_c = st.number_input("FIB count", min_value=0, value=3, label_visibility="collapsed", key="f_c")
+    with c3: fib_d = st.selectbox("FIB Diff", diff_options, label_visibility="collapsed", key="f_d")
+
+    c1, c2, c3 = st.columns([2, 1, 2])
+    with c1: st.markdown("<div style='padding-top: 10px;'>True / False</div>", unsafe_allow_html=True)
+    with c2: tf_c = st.number_input("TF count", min_value=0, value=3, label_visibility="collapsed", key="t_c")
+    with c3: tf_d = st.selectbox("TF Diff", diff_options, label_visibility="collapsed", key="t_d")
+
+    c1, c2, c3 = st.columns([2, 1, 2])
+    with c1: st.markdown("<div style='padding-top: 10px;'>Short Answer (2-3 Lines)</div>", unsafe_allow_html=True)
+    with c2: short_c = st.number_input("Short count", min_value=0, value=3, label_visibility="collapsed", key="s_c")
+    with c3: short_d = st.selectbox("Short Diff", diff_options, label_visibility="collapsed", key="s_d")
+
+    c1, c2, c3 = st.columns([2, 1, 2])
+    with c1: st.markdown("<div style='padding-top: 10px;'>Long Answer (Detailed)</div>", unsafe_allow_html=True)
+    with c2: long_c = st.number_input("Long count", min_value=0, value=2, label_visibility="collapsed", key="l_c")
+    with c3: long_d = st.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d")
+
+    st.markdown("---")
+
+    generate_btn = st.button("🚀 Generate Exam Paper", use_container_width=True)
+
+    if generate_btn:
+        if not api_key:
+            st.error("API Key is missing! Please add it in the sidebar.")
+        else:
+            total_q = mcq_c + fib_c + tf_c + short_c + long_c
+            q_reqs = build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d, include_answer_key)
+            board_rules = get_board_instructions(board_format)
+            lang_rules = get_language_instructions(paper_language)
+            
+            if "Syllabus" in source_choice:
+                if not sub1 or not syl1: st.error("Please fill in the Subject and Syllabus details.")
+                else:
+                    with st.spinner(f"Generating {board_format} Paper in {paper_language}..."):
+                        header = f"""# {inst_name}\n**Class:** {grade1} | **Subject:** {sub1} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"""
+                        prompt = f"You are an expert educator. Create an exam paper covering strictly: {syl1}\n{board_rules}\n{lang_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header}\nGenerate exactly the following questions:\n{q_reqs}"
+                        try:
+                            model = genai.GenerativeModel(working_model_name)
+                            response = model.generate_content(prompt)
+                            st.session_state.paper_content = response.text
+                            st.session_state.file_name = f"{sub1}_Paper.html"
+                            st.session_state.current_subject = f"{sub1} (Class: {grade1})"
+                        except Exception as e: st.error(f"API Error: {e}")
+            else:
+                if not up_pdf or not sub2 or not top2: st.error("Please upload the PDF and fill in the Subject and Topic.")
+                else:
+                    with st.spinner(f"Reading PDF & Generating {board_format} Paper in {paper_language}..."):
+                        document_text = extract_text_from_pdf(up_pdf, start_p, end_p)
+                        header = f"""# {inst_name}\n**Subject:** {sub2} | **Topic:** {top2} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"""
+                        prompt = f"You are an expert exam creator. Generate an exam ONLY for the topic requested below using the provided text.\n- Subject: {sub2}\n- Target Topic: {top2}\nCRITICAL INSTRUCTIONS:\n1. Ignore any text NOT related to '{top2}'.\n2. Extract questions STRICTLY from the text provided below.\n{board_rules}\n{lang_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header}\nGenerate exactly the following questions:\n{q_reqs}\nTextbook text:\n---\n{document_text}\n---"
+                        try:
+                            model = genai.GenerativeModel(working_model_name)
+                            response = model.generate_content(prompt)
+                            st.session_state.paper_content = response.text
+                            st.session_state.file_name = f"{top2}_Paper.html"
+                            st.session_state.current_subject = f"{sub2} - {top2}"
+                        except Exception as e: st.error(f"API Error: {e}")
+
+    # --- LIVE EDIT & DOWNLOAD SECTION ---
+    if st.session_state.paper_content:
+        st.markdown("---")
+        st.markdown("### ✍️ Edit Your Paper & Save")
+        st.success("💡 **Pro Tip for Diagrams:** Need an image or diagram in your paper? Just leave some blank space (press Enter a few times) in the editor below. After downloading the A4 HTML, open it in MS Word/Chrome and paste your images directly into that space before printing!")
+        
+        edited_paper = st.text_area("Live Editor (Markdown format):", value=st.session_state.paper_content, height=450)
+        
+        with st.expander("👁️ Preview Final Paper Layout", expanded=False):
+            if inst_logo is not None:
+                col_img = st.columns([2, 1, 2])[1]
+                col_img.image(inst_logo, width=150)
+            st.markdown(edited_paper)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        final_html = create_a4_html(edited_paper, inst_name, inst_address, inst_contact)
+        
+        # --- NEW: SAVE TO DB AND DOWNLOAD BUTTONS ---
+        col_dl, col_save = st.columns(2)
+        with col_dl:
+            st.download_button(
+                label="🖨️ Download Final A4 Paper", 
+                data=final_html, 
+                file_name=st.session_state.file_name, 
+                mime="text/html",
+                use_container_width=True
+            )
+        with col_save:
+            if st.button("💾 Save to Past Papers Library", use_container_width=True):
+                # Save to SQLite DB
+                conn = sqlite3.connect('paperbanao.db')
+                c = conn.cursor()
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+                c.execute("INSERT INTO papers (date, subject, board, content) VALUES (?, ?, ?, ?)",
+                          (current_time, st.session_state.current_subject, board_format, final_html))
+                conn.commit()
+                conn.close()
+                st.success("✅ Paper saved successfully! Check the 'Past Papers History' tab.")
+
+# ------------------------------------------
+# TAB 2: PAST PAPERS HISTORY (NEW FEATURE)
+# ------------------------------------------
+with tab_history:
+    st.markdown("### 🗂️ Your Saved Past Papers")
+    st.info("All the papers you generate and 'Save' will appear here. You can download them anytime.")
     
-    # --- PRO TIP ADDED HERE ---
-    st.success("💡 **Pro Tip for Diagrams:** Need an image or diagram in your paper? Just leave some blank space (press Enter a few times) in the editor below. After downloading the A4 HTML, open it in MS Word/Chrome and paste your images directly into that space before printing!")
+    # Fetch Data from DB
+    conn = sqlite3.connect('paperbanao.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM papers ORDER BY id DESC")
+    saved_papers = c.fetchall()
+    conn.close()
     
-    edited_paper = st.text_area("Live Editor (Markdown format):", value=st.session_state.paper_content, height=450)
-    
-    with st.expander("👁️ Preview Final Paper Layout", expanded=False):
-        if inst_logo is not None:
-            col_img = st.columns([2, 1, 2])[1]
-            col_img.image(inst_logo, width=150)
-        st.markdown(edited_paper)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    final_html = create_a4_html(edited_paper, inst_name, inst_address, inst_contact)
-    
-    st.download_button(
-        label="🖨️ Download Final A4 Paper (HTML/PDF)", 
-        data=final_html, 
-        file_name=st.session_state.file_name, 
-        mime="text/html",
-        use_container_width=True
-    )
+    if not saved_papers:
+        st.warning("No papers saved yet. Generate a paper and click 'Save to Past Papers' to see it here!")
+    else:
+        for paper in saved_papers:
+            p_id, p_date, p_sub, p_board, p_html = paper
+            
+            # Show Each Paper in a collapsible box
+            with st.expander(f"📄 {p_sub} | {p_board} | 🕒 {p_date}"):
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.download_button(
+                        label="📥 Download A4 Paper", 
+                        data=p_html, 
+                        file_name=f"Saved_{p_id}_Paper.html", 
+                        mime="text/html",
+                        key=f"dl_{p_id}",
+                        use_container_width=True
+                    )
+                with c2:
+                    if st.button("🗑️ Delete Paper", key=f"del_{p_id}", on_click=delete_paper, args=(p_id,), use_container_width=True):
+                        st.rerun()
