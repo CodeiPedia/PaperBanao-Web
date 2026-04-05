@@ -184,4 +184,116 @@ else:
     up_pdf = st.file_uploader("Upload Book/Chapter (PDF)", type="pdf")
     col4, col5 = st.columns(2)
     with col4: start_p = st.number_input("Start Page", min_value=1, value=1)
-    with col5: end_p = st.
+    with col5: end_p = st.number_input("End Page", min_value=1, value=5)
+    col6, col7 = st.columns(2)
+    with col6: sub2 = st.text_input("Subject")
+    with col7: top2 = st.text_input("Specific Topic (e.g., Basic Electricity)")
+
+st.markdown("---")
+
+# ==========================================
+# --- 2. SET QUESTIONS & DIFFICULTY (BOTTOM) ---
+# ==========================================
+st.markdown("### 2. Set Questions & Difficulty")
+diff_options = ["Easy", "Medium", "Hard", "Mixed"]
+
+h1, h2, h3 = st.columns([2, 1, 2])
+h1.markdown("**Question Type**")
+h2.markdown("**Count**")
+h3.markdown("**Difficulty**")
+
+c1, c2, c3 = st.columns([2, 1, 2])
+with c1: st.markdown("<div style='padding-top: 10px;'>Multiple Choice (MCQs)</div>", unsafe_allow_html=True)
+with c2: mcq_c = st.number_input("MCQ count", min_value=0, value=5, label_visibility="collapsed", key="m_c")
+with c3: mcq_d = st.selectbox("MCQ Diff", diff_options, label_visibility="collapsed", key="m_d")
+
+c1, c2, c3 = st.columns([2, 1, 2])
+with c1: st.markdown("<div style='padding-top: 10px;'>Fill in the Blanks</div>", unsafe_allow_html=True)
+with c2: fib_c = st.number_input("FIB count", min_value=0, value=3, label_visibility="collapsed", key="f_c")
+with c3: fib_d = st.selectbox("FIB Diff", diff_options, label_visibility="collapsed", key="f_d")
+
+c1, c2, c3 = st.columns([2, 1, 2])
+with c1: st.markdown("<div style='padding-top: 10px;'>True / False</div>", unsafe_allow_html=True)
+with c2: tf_c = st.number_input("TF count", min_value=0, value=3, label_visibility="collapsed", key="t_c")
+with c3: tf_d = st.selectbox("TF Diff", diff_options, label_visibility="collapsed", key="t_d")
+
+c1, c2, c3 = st.columns([2, 1, 2])
+with c1: st.markdown("<div style='padding-top: 10px;'>Short Answer (2-3 Lines)</div>", unsafe_allow_html=True)
+with c2: short_c = st.number_input("Short count", min_value=0, value=3, label_visibility="collapsed", key="s_c")
+with c3: short_d = st.selectbox("Short Diff", diff_options, label_visibility="collapsed", key="s_d")
+
+c1, c2, c3 = st.columns([2, 1, 2])
+with c1: st.markdown("<div style='padding-top: 10px;'>Long Answer (Detailed)</div>", unsafe_allow_html=True)
+with c2: long_c = st.number_input("Long count", min_value=0, value=2, label_visibility="collapsed", key="l_c")
+with c3: long_d = st.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d")
+
+st.markdown("---")
+
+# ==========================================
+# --- 3. GENERATE BUTTON ---
+# ==========================================
+generate_btn = st.button("🚀 Generate Exam Paper", use_container_width=True)
+
+if generate_btn:
+    if not api_key:
+        st.error("API Key is missing! Please add it in the sidebar.")
+    else:
+        total_q = mcq_c + fib_c + tf_c + short_c + long_c
+        q_reqs = build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d, include_answer_key)
+        board_rules = get_board_instructions(board_format)
+        lang_rules = get_language_instructions(paper_language)
+        
+        if "Syllabus" in source_choice:
+            if not sub1 or not syl1: st.error("Please fill in the Subject and Syllabus details.")
+            else:
+                with st.spinner(f"Generating {board_format} Paper in {paper_language}..."):
+                    header = f"""# {inst_name}\n**Class:** {grade1} | **Subject:** {sub1} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"""
+                    prompt = f"You are an expert educator. Create an exam paper covering strictly: {syl1}\n{board_rules}\n{lang_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header}\nGenerate exactly the following questions:\n{q_reqs}"
+                    try:
+                        model = genai.GenerativeModel(working_model_name)
+                        response = model.generate_content(prompt)
+                        st.session_state.paper_content = response.text
+                        st.session_state.file_name = f"{sub1}_Paper.html"
+                    except Exception as e: st.error(f"API Error: {e}")
+        else:
+            if not up_pdf or not sub2 or not top2: st.error("Please upload the PDF and fill in the Subject and Topic.")
+            else:
+                with st.spinner(f"Reading PDF & Generating {board_format} Paper in {paper_language}..."):
+                    document_text = extract_text_from_pdf(up_pdf, start_p, end_p)
+                    header = f"""# {inst_name}\n**Subject:** {sub2} | **Topic:** {top2} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"""
+                    prompt = f"You are an expert exam creator. Generate an exam ONLY for the topic requested below using the provided text.\n- Subject: {sub2}\n- Target Topic: {top2}\nCRITICAL INSTRUCTIONS:\n1. Ignore any text NOT related to '{top2}'.\n2. Extract questions STRICTLY from the text provided below.\n{board_rules}\n{lang_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header}\nGenerate exactly the following questions:\n{q_reqs}\nTextbook text:\n---\n{document_text}\n---"
+                    try:
+                        model = genai.GenerativeModel(working_model_name)
+                        response = model.generate_content(prompt)
+                        st.session_state.paper_content = response.text
+                        st.session_state.file_name = f"{top2}_Paper.html"
+                    except Exception as e: st.error(f"API Error: {e}")
+
+# ==========================================
+# --- 4. LIVE EDIT & DOWNLOAD SECTION ---
+# ==========================================
+if st.session_state.paper_content:
+    st.markdown("---")
+    st.markdown("### ✍️ 4. Edit Your Paper & Download")
+    st.info("You can type in the box below to make any changes. Your edits will be saved in the downloaded file!")
+    
+    edited_paper = st.text_area("Live Editor (Markdown format):", value=st.session_state.paper_content, height=450)
+    
+    with st.expander("👁️ Preview Final Paper Layout", expanded=False):
+        if inst_logo is not None:
+            col_img = st.columns([2, 1, 2])[1]
+            col_img.image(inst_logo, width=150)
+        st.markdown(edited_paper)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # PASSING BRANDING DETAILS TO HTML GENERATOR
+    final_html = create_a4_html(edited_paper, inst_name, inst_address, inst_contact)
+    
+    st.download_button(
+        label="🖨️ Download Final A4 Paper (HTML/PDF)", 
+        data=final_html, 
+        file_name=st.session_state.file_name, 
+        mime="text/html",
+        use_container_width=True
+    )
