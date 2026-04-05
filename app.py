@@ -5,6 +5,11 @@ import os
 import markdown
 import sqlite3
 from datetime import datetime
+import re
+
+# --- NEW IMPORTS FOR WORD DOCUMENT EXPORT ---
+from docx import Document
+from io import BytesIO
 
 # --- Page Config ---
 st.set_page_config(page_title="PaperBanao - AI Question Paper", page_icon="📝", layout="centered")
@@ -27,7 +32,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-init_db() # Run database initialization
+init_db()
 
 def delete_paper(paper_id):
     conn = sqlite3.connect('paperbanao.db')
@@ -40,7 +45,7 @@ def delete_paper(paper_id):
 if "paper_content" not in st.session_state:
     st.session_state.paper_content = ""
 if "file_name" not in st.session_state:
-    st.session_state.file_name = "PaperBanao_Exam.html"
+    st.session_state.file_name = "PaperBanao_Exam"
 if "current_subject" not in st.session_state:
     st.session_state.current_subject = "Unknown Subject"
 
@@ -84,7 +89,6 @@ inst_name = st.sidebar.text_input("Institute / School Name", value="My Success A
 exam_time = st.sidebar.text_input("Exam Time (Duration)", value="2 Hours")
 max_marks = st.sidebar.number_input("Maximum Marks", min_value=1, value=50)
 
-# === FEATURE 4: CONTACT DETAILS FOR FOOTER ===
 st.sidebar.markdown("---")
 st.sidebar.header("🏢 Contact Details (Footer)")
 inst_address = st.sidebar.text_input("Institute Address", value="123 Education Lane, City")
@@ -102,7 +106,6 @@ paper_language = st.sidebar.selectbox(
     ["English", "Hindi", "Bilingual (English + Hindi)"]
 )
 
-# === FEATURE 3: ANSWER KEY TOGGLE ===
 st.sidebar.markdown("---")
 st.sidebar.header("🔑 Output Settings")
 include_answer_key = st.sidebar.toggle("Include Answer Key at the end", value=True)
@@ -137,14 +140,14 @@ def build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short
         return "\n".join(reqs) + "\n\n*CRITICAL: DO NOT provide any answers, solutions, or answer keys. Provide ONLY the questions. Stop generating after the last question.*"
 
 def get_board_instructions(board):
-    if board == "CBSE": return "CRITICAL BOARD FORMAT: Structure the paper strictly matching CBSE board exam patterns. Group questions logically into Sections. Add standard CBSE General Instructions at the top."
-    elif board == "ICSE": return "CRITICAL BOARD FORMAT: Structure the paper strictly matching ICSE board exam patterns. Add standard ICSE General Instructions."
-    elif board == "BSEB (Bihar Board)": return "CRITICAL BOARD FORMAT: Structure the paper strictly matching BSEB (Bihar School Examination Board) patterns. Divide into 'Section-A: Objective Type' and 'Section-B: Subjective Type'. Add standard BSEB General Instructions."
+    if board == "CBSE": return "CRITICAL BOARD FORMAT: Structure the paper strictly matching CBSE board exam patterns. Group questions logically into Sections."
+    elif board == "ICSE": return "CRITICAL BOARD FORMAT: Structure the paper strictly matching ICSE board exam patterns."
+    elif board == "BSEB (Bihar Board)": return "CRITICAL BOARD FORMAT: Structure the paper strictly matching BSEB (Bihar School Examination Board) patterns. Divide into 'Section-A: Objective Type' and 'Section-B: Subjective Type'."
     else: return "Format the paper beautifully as a standard ready-to-print exam paper with clear sections."
 
 def get_language_instructions(lang):
     if lang == "Hindi": return "CRITICAL LANGUAGE FORMAT: Generate the ENTIRE exam paper strictly in Hindi language."
-    elif lang == "Bilingual (English + Hindi)": return "CRITICAL LANGUAGE FORMAT: Generate the exam paper in a BILINGUAL format. For every instruction and every question, write it first in English, immediately followed by its exact translation in Hindi below it."
+    elif lang == "Bilingual (English + Hindi)": return "CRITICAL LANGUAGE FORMAT: Generate the exam paper in a BILINGUAL format. Write it first in English, immediately followed by exact Hindi translation."
     else: return "CRITICAL LANGUAGE FORMAT: Generate the paper in English."
 
 def create_a4_html(md_content, i_name, i_address, i_contact):
@@ -153,45 +156,73 @@ def create_a4_html(md_content, i_name, i_address, i_contact):
     md_content = md_content.replace("## Answer Key", "<div style='page-break-before: always;'></div>\n## Answer Key")
 
     html_body = markdown.markdown(md_content)
-    
-    footer_html = f"""
-    <div class="footer">
-        <p><strong>{i_name}</strong> | 📍 {i_address} | 📞 {i_contact}</p>
-        <p style="font-size: 12px; color: #888; margin-top: 5px;"><em>Generated securely by PaperBanao AI</em></p>
-    </div>
-    """
+    footer_html = f"""<div class="footer"><p><strong>{i_name}</strong> | 📍 {i_address} | 📞 {i_contact}</p></div>"""
     
     html_template = f"""
     <!DOCTYPE html>
     <html lang="en">
     <head>
-        <meta charset="UTF-8">
-        <title>Question Paper</title>
-        <script>
-          MathJax = {{ tex: {{ inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] }} }};
-        </script>
+        <meta charset="UTF-8"><title>Question Paper</title>
+        <script>MathJax = {{ tex: {{ inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] }} }};</script>
         <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
         <style>
             body {{ background-color: #f0f0f0; font-family: 'Times New Roman', Times, serif; margin: 0; padding: 20px; display: flex; justify-content: center; }}
-            .a4-page {{ background-color: white; width: 210mm; min-height: 297mm; padding: 20mm; box-sizing: border-box; box-shadow: 0 0 10px rgba(0,0,0,0.2); position: relative; }}
+            .a4-page {{ background-color: white; width: 210mm; min-height: 297mm; padding: 20mm; box-sizing: border-box; box-shadow: 0 0 10px rgba(0,0,0,0.2); }}
             @media print {{ body {{ background-color: white; padding: 0; display: block; }} .a4-page {{ box-shadow: none; width: 100%; padding: 0; margin: 0; min-height: auto; }} @page {{ size: A4; margin: 20mm; }} }}
             h1, h2, h3 {{ text-align: center; color: #111; }} p, li {{ font-size: 16px; line-height: 1.5; color: #000; }} hr {{ border: 1px solid #ccc; margin: 20px 0; }}
-            mjx-container {{ max-width: 100%; overflow-x: auto; overflow-y: hidden; }}
-            
-            /* Footer Styling */
             .footer {{ margin-top: 50px; padding-top: 15px; border-top: 2px dashed #bbb; text-align: center; font-size: 14px; color: #444; page-break-inside: avoid; }}
-            .footer p {{ margin: 2px 0; font-size: 14px; color: #444; }}
         </style>
     </head>
-    <body>
-        <div class="a4-page">
-            {html_body}
-            {footer_html}
-        </div>
-    </body>
+    <body><div class="a4-page">{html_body}{footer_html}</div></body>
     </html>
     """
     return html_template
+
+# === NEW: GENERATE MS WORD DOCUMENT (.docx) ===
+def create_word_docx(md_content, i_name, i_address, i_contact):
+    doc = Document()
+    
+    # 1. Add Institute Name Header
+    header = doc.add_heading(i_name, level=0)
+    header.alignment = 1 # Center alignment
+    
+    # 2. Parse Markdown Content into Word format
+    lines = md_content.split('\n')
+    for line in lines:
+        if line.strip() == "":
+            continue
+            
+        # Detect Answer Key and force Page Break in MS Word
+        if "# Answer Key" in line or "# ANSWER KEY" in line or "## Answer Key" in line:
+            doc.add_page_break()
+            doc.add_heading("Answer Key", level=1)
+            continue
+            
+        if line.startswith('# '):
+            doc.add_heading(line.replace('# ', ''), level=1)
+        elif line.startswith('## '):
+            doc.add_heading(line.replace('## ', ''), level=2)
+        elif line.startswith('### '):
+            doc.add_heading(line.replace('### ', ''), level=3)
+        else:
+            p = doc.add_paragraph()
+            # Simple Bold Parsing for MS Word (**text**)
+            parts = re.split(r'\*\*(.*?)\*\*', line)
+            for i, part in enumerate(parts):
+                if i % 2 == 1: # It is bold text
+                    p.add_run(part).bold = True
+                else:
+                    p.add_run(part)
+                    
+    # 3. Add Custom Footer at the end
+    doc.add_paragraph("\n")
+    footer = doc.add_paragraph(f"📍 {i_address} | 📞 {i_contact}\nGenerated securely by PaperBanao AI")
+    footer.alignment = 1 # Center
+    
+    # Save document into memory to download directly
+    bio = BytesIO()
+    doc.save(bio)
+    return bio.getvalue()
 
 
 # ==========================================
@@ -200,7 +231,7 @@ def create_a4_html(md_content, i_name, i_address, i_contact):
 tab_create, tab_history = st.tabs(["🏠 Create New Paper", "🗂️ Past Papers History"])
 
 # ------------------------------------------
-# TAB 1: CREATE NEW PAPER (All previous logic goes here)
+# TAB 1: CREATE NEW PAPER
 # ------------------------------------------
 with tab_create:
     st.markdown("### 1. Choose Paper Source")
@@ -210,13 +241,11 @@ with tab_create:
     up_pdf, start_p, end_p, sub2, top2 = None, 1, 5, "", ""
 
     if "Syllabus" in source_choice:
-        st.info("Best for general tests without strict textbook boundaries.")
         col1, col2 = st.columns(2)
         with col1: sub1 = st.text_input("Subject (e.g., Science)")
         with col2: grade1 = st.text_input("Class / Grade")
         syl1 = st.text_area("Paste Syllabus or Topics to Cover", placeholder="e.g., Light reflection, Newton's laws...")
     else:
-        st.info("Best when you want questions extracted ONLY from the provided text.")
         up_pdf = st.file_uploader("Upload Book/Chapter (PDF)", type="pdf")
         col4, col5 = st.columns(2)
         with col4: start_p = st.number_input("Start Page", min_value=1, value=1)
@@ -229,11 +258,6 @@ with tab_create:
 
     st.markdown("### 2. Set Questions & Difficulty")
     diff_options = ["Easy", "Medium", "Hard", "Mixed"]
-
-    h1, h2, h3 = st.columns([2, 1, 2])
-    h1.markdown("**Question Type**")
-    h2.markdown("**Count**")
-    h3.markdown("**Difficulty**")
 
     c1, c2, c3 = st.columns([2, 1, 2])
     with c1: st.markdown("<div style='padding-top: 10px;'>Multiple Choice (MCQs)</div>", unsafe_allow_html=True)
@@ -261,7 +285,6 @@ with tab_create:
     with c3: long_d = st.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d")
 
     st.markdown("---")
-
     generate_btn = st.button("🚀 Generate Exam Paper", use_container_width=True)
 
     if generate_btn:
@@ -283,7 +306,7 @@ with tab_create:
                             model = genai.GenerativeModel(working_model_name)
                             response = model.generate_content(prompt)
                             st.session_state.paper_content = response.text
-                            st.session_state.file_name = f"{sub1}_Paper.html"
+                            st.session_state.file_name = f"{sub1}_Paper"
                             st.session_state.current_subject = f"{sub1} (Class: {grade1})"
                         except Exception as e: st.error(f"API Error: {e}")
             else:
@@ -297,7 +320,7 @@ with tab_create:
                             model = genai.GenerativeModel(working_model_name)
                             response = model.generate_content(prompt)
                             st.session_state.paper_content = response.text
-                            st.session_state.file_name = f"{top2}_Paper.html"
+                            st.session_state.file_name = f"{top2}_Paper"
                             st.session_state.current_subject = f"{sub2} - {top2}"
                         except Exception as e: st.error(f"API Error: {e}")
 
@@ -305,7 +328,6 @@ with tab_create:
     if st.session_state.paper_content:
         st.markdown("---")
         st.markdown("### ✍️ Edit Your Paper & Save")
-        st.success("💡 **Pro Tip for Diagrams:** Need an image or diagram in your paper? Just leave some blank space (press Enter a few times) in the editor below. After downloading the A4 HTML, open it in MS Word/Chrome and paste your images directly into that space before printing!")
         
         edited_paper = st.text_area("Live Editor (Markdown format):", value=st.session_state.paper_content, height=450)
         
@@ -316,38 +338,48 @@ with tab_create:
             st.markdown(edited_paper)
         
         st.markdown("<br>", unsafe_allow_html=True)
-        final_html = create_a4_html(edited_paper, inst_name, inst_address, inst_contact)
         
-        # --- NEW: SAVE TO DB AND DOWNLOAD BUTTONS ---
-        col_dl, col_save = st.columns(2)
-        with col_dl:
+        # Format Downloads
+        final_html = create_a4_html(edited_paper, inst_name, inst_address, inst_contact)
+        final_word = create_word_docx(edited_paper, inst_name, inst_address, inst_contact)
+        
+        # --- NEW: THREE BUTTONS (HTML, WORD, SAVE) ---
+        col_dl_h, col_dl_w, col_save = st.columns(3)
+        with col_dl_h:
             st.download_button(
-                label="🖨️ Download Final A4 Paper", 
+                label="🖨️ Download HTML (A4 Print)", 
                 data=final_html, 
-                file_name=st.session_state.file_name, 
+                file_name=st.session_state.file_name + ".html", 
                 mime="text/html",
                 use_container_width=True
             )
+        with col_dl_w:
+            st.download_button(
+                label="📄 Download MS Word (.docx)", 
+                data=final_word, 
+                file_name=st.session_state.file_name + ".docx", 
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True
+            )
         with col_save:
-            if st.button("💾 Save to Past Papers Library", use_container_width=True):
-                # Save to SQLite DB
+            if st.button("💾 Save to Past Papers", use_container_width=True):
+                # We save the "Edited Raw Text" in DB so we can generate HTML/Word later too!
                 conn = sqlite3.connect('paperbanao.db')
                 c = conn.cursor()
                 current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
                 c.execute("INSERT INTO papers (date, subject, board, content) VALUES (?, ?, ?, ?)",
-                          (current_time, st.session_state.current_subject, board_format, final_html))
+                          (current_time, st.session_state.current_subject, board_format, edited_paper))
                 conn.commit()
                 conn.close()
-                st.success("✅ Paper saved successfully! Check the 'Past Papers History' tab.")
+                st.success("✅ Paper saved! Check the 'Past Papers History' tab.")
 
 # ------------------------------------------
-# TAB 2: PAST PAPERS HISTORY (NEW FEATURE)
+# TAB 2: PAST PAPERS HISTORY
 # ------------------------------------------
 with tab_history:
     st.markdown("### 🗂️ Your Saved Past Papers")
-    st.info("All the papers you generate and 'Save' will appear here. You can download them anytime.")
+    st.info("Download your previously generated papers in HTML or MS Word format.")
     
-    # Fetch Data from DB
     conn = sqlite3.connect('paperbanao.db')
     c = conn.cursor()
     c.execute("SELECT * FROM papers ORDER BY id DESC")
@@ -358,20 +390,25 @@ with tab_history:
         st.warning("No papers saved yet. Generate a paper and click 'Save to Past Papers' to see it here!")
     else:
         for paper in saved_papers:
-            p_id, p_date, p_sub, p_board, p_html = paper
+            p_id, p_date, p_sub, p_board, p_content = paper
             
-            # Show Each Paper in a collapsible box
             with st.expander(f"📄 {p_sub} | {p_board} | 🕒 {p_date}"):
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.download_button(
-                        label="📥 Download A4 Paper", 
-                        data=p_html, 
-                        file_name=f"Saved_{p_id}_Paper.html", 
-                        mime="text/html",
-                        key=f"dl_{p_id}",
-                        use_container_width=True
-                    )
-                with c2:
-                    if st.button("🗑️ Delete Paper", key=f"del_{p_id}", on_click=delete_paper, args=(p_id,), use_container_width=True):
-                        st.rerun()
+                
+                # If old papers have HTML saved directly instead of markdown, handle smoothly
+                if "<!DOCTYPE html>" in p_content:
+                    st.warning("Note: This is an older paper saved in HTML format. Word Download is unavailable for this specific file.")
+                    st.download_button("📥 Download HTML Paper", data=p_content, file_name=f"Saved_{p_id}.html", mime="text/html", key=f"dl_old_{p_id}")
+                    if st.button("🗑️ Delete Paper", key=f"del_old_{p_id}", on_click=delete_paper, args=(p_id,)): st.rerun()
+                else:
+                    # Generate fresh HTML and Word files from DB Memory
+                    hist_html = create_a4_html(p_content, inst_name, inst_address, inst_contact)
+                    hist_word = create_word_docx(p_content, inst_name, inst_address, inst_contact)
+                    
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        st.download_button("🖨️ Download HTML", data=hist_html, file_name=f"History_{p_id}.html", mime="text/html", key=f"dl_h_{p_id}", use_container_width=True)
+                    with c2:
+                        st.download_button("📄 Download Word", data=hist_word, file_name=f"History_{p_id}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_w_{p_id}", use_container_width=True)
+                    with c3:
+                        if st.button("🗑️ Delete", key=f"del_{p_id}", on_click=delete_paper, args=(p_id,), use_container_width=True):
+                            st.rerun()
