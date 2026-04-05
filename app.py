@@ -25,7 +25,7 @@ st.sidebar.header("⚙️ System Settings")
 api_key = st.sidebar.text_input("Enter Google Gemini API Key:", type="password")
 
 # --- AUTO-DETECT MODEL LOGIC ---
-working_model_name = "gemini-1.5-flash" # Fallback Default
+working_model_name = "gemini-1.5-flash" 
 if api_key:
     genai.configure(api_key=api_key)
     try:
@@ -90,7 +90,6 @@ def get_board_instructions(board):
     else:
         return "Format the paper beautifully as a standard ready-to-print exam paper with clear sections."
 
-# === HTML A4 GENERATOR WITH PAGE BREAK & MATH SUPPORT ===
 def create_a4_html(md_content):
     md_content = md_content.replace("# Answer Key", "<div style='page-break-before: always;'></div>\n# Answer Key")
     md_content = md_content.replace("# ANSWER KEY", "<div style='page-break-before: always;'></div>\n# ANSWER KEY")
@@ -104,7 +103,6 @@ def create_a4_html(md_content):
     <head>
         <meta charset="UTF-8">
         <title>Question Paper</title>
-        
         <script>
           MathJax = {{
             tex: {{
@@ -114,38 +112,12 @@ def create_a4_html(md_content):
           }};
         </script>
         <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-
         <style>
-            body {{
-                background-color: #f0f0f0;
-                font-family: 'Times New Roman', Times, serif;
-                margin: 0;
-                padding: 20px;
-                display: flex;
-                justify-content: center;
-            }}
-            .a4-page {{
-                background-color: white;
-                width: 210mm;
-                min-height: 297mm;
-                padding: 20mm;
-                box-sizing: border-box;
-                box-shadow: 0 0 10px rgba(0,0,0,0.2);
-            }}
-            @media print {{
-                body {{ background-color: white; padding: 0; display: block; }}
-                .a4-page {{ box-shadow: none; width: 100%; padding: 0; margin: 0; }}
-                @page {{ size: A4; margin: 20mm; }}
-            }}
-            h1, h2, h3 {{ text-align: center; color: #111; }}
-            p, li {{ font-size: 16px; line-height: 1.5; color: #000; }}
-            hr {{ border: 1px solid #ccc; margin: 20px 0; }}
-            
-            mjx-container {{
-                max-width: 100%;
-                overflow-x: auto;
-                overflow-y: hidden;
-            }}
+            body {{ background-color: #f0f0f0; font-family: 'Times New Roman', Times, serif; margin: 0; padding: 20px; display: flex; justify-content: center; }}
+            .a4-page {{ background-color: white; width: 210mm; min-height: 297mm; padding: 20mm; box-sizing: border-box; box-shadow: 0 0 10px rgba(0,0,0,0.2); }}
+            @media print {{ body {{ background-color: white; padding: 0; display: block; }} .a4-page {{ box-shadow: none; width: 100%; padding: 0; margin: 0; }} @page {{ size: A4; margin: 20mm; }} }}
+            h1, h2, h3 {{ text-align: center; color: #111; }} p, li {{ font-size: 16px; line-height: 1.5; color: #000; }} hr {{ border: 1px solid #ccc; margin: 20px 0; }}
+            mjx-container {{ max-width: 100%; overflow-x: auto; overflow-y: hidden; }}
         </style>
     </head>
     <body>
@@ -157,15 +129,58 @@ def create_a4_html(md_content):
     """
     return html_template
 
-
 # ==========================================
-# --- CREATE TABS FOR PROFESSIONAL UI ---
+# --- 1. GLOBAL QUESTION SETUP (PERFECT ALIGNMENT) ---
 # ==========================================
-tab1, tab2 = st.tabs(["⚡ Quick Generate (By Syllabus)", "📄 Deep Extract (From PDF Book)"])
+st.markdown("### 1. Set Questions & Difficulty")
 diff_options = ["Easy", "Medium", "Hard", "Mixed"]
 
+# Headers
+h1, h2, h3 = st.columns([2, 1, 2])
+h1.markdown("**Question Type**")
+h2.markdown("**Count**")
+h3.markdown("**Difficulty**")
+
+# Row 1: MCQs
+c1, c2, c3 = st.columns([2, 1, 2])
+with c1: st.markdown("<div style='padding-top: 10px;'>Multiple Choice (MCQs)</div>", unsafe_allow_html=True)
+with c2: mcq_c = st.number_input("MCQ count", min_value=0, value=5, label_visibility="collapsed", key="m_c")
+with c3: mcq_d = st.selectbox("MCQ Diff", diff_options, label_visibility="collapsed", key="m_d")
+
+# Row 2: Fill in the Blanks
+c1, c2, c3 = st.columns([2, 1, 2])
+with c1: st.markdown("<div style='padding-top: 10px;'>Fill in the Blanks</div>", unsafe_allow_html=True)
+with c2: fib_c = st.number_input("FIB count", min_value=0, value=3, label_visibility="collapsed", key="f_c")
+with c3: fib_d = st.selectbox("FIB Diff", diff_options, label_visibility="collapsed", key="f_d")
+
+# Row 3: True / False
+c1, c2, c3 = st.columns([2, 1, 2])
+with c1: st.markdown("<div style='padding-top: 10px;'>True / False</div>", unsafe_allow_html=True)
+with c2: tf_c = st.number_input("TF count", min_value=0, value=3, label_visibility="collapsed", key="t_c")
+with c3: tf_d = st.selectbox("TF Diff", diff_options, label_visibility="collapsed", key="t_d")
+
+# Row 4: Short Answer
+c1, c2, c3 = st.columns([2, 1, 2])
+with c1: st.markdown("<div style='padding-top: 10px;'>Short Answer (2-3 Lines)</div>", unsafe_allow_html=True)
+with c2: short_c = st.number_input("Short count", min_value=0, value=3, label_visibility="collapsed", key="s_c")
+with c3: short_d = st.selectbox("Short Diff", diff_options, label_visibility="collapsed", key="s_d")
+
+# Row 5: Long Answer
+c1, c2, c3 = st.columns([2, 1, 2])
+with c1: st.markdown("<div style='padding-top: 10px;'>Long Answer (Detailed)</div>", unsafe_allow_html=True)
+with c2: long_c = st.number_input("Long count", min_value=0, value=2, label_visibility="collapsed", key="l_c")
+with c3: long_d = st.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d")
+
+st.markdown("---")
+
+# ==========================================
+# --- 2. CHOOSE GENERATION METHOD ---
+# ==========================================
+st.markdown("### 2. Choose Paper Source")
+tab1, tab2 = st.tabs(["⚡ Quick Generate (By Syllabus)", "📄 Deep Extract (From PDF Book)"])
+
 # ------------------------------------------
-# TAB 1: ORIGINAL FEATURE (Syllabus Based)
+# TAB 1: SYLLABUS BASED
 # ------------------------------------------
 with tab1:
     with st.form("quick_gen_form"):
@@ -176,60 +191,25 @@ with tab1:
             grade_t1 = st.text_input("Class / Grade")
             
         syllabus_t1 = st.text_area("Paste Syllabus or Topics to Cover", placeholder="e.g., Light reflection, Newton's laws...")
-        
-        st.markdown("#### Question Setup")
-        c1, c2, c3 = st.columns([2, 1, 2])
-        c1.markdown("**Type**"); c2.markdown("**Count**"); c3.markdown("**Difficulty**")
-        
-        c1.write("Multiple Choice (MCQs)")
-        mcq_t1 = c2.number_input("MCQ count", min_value=0, value=5, label_visibility="collapsed", key="m_c1")
-        mcq_d1 = c3.selectbox("MCQ Diff", diff_options, label_visibility="collapsed", key="m_d1")
-
-        c1.write("Fill in the Blanks")
-        fib_t1 = c2.number_input("FIB count", min_value=0, value=3, label_visibility="collapsed", key="f_c1")
-        fib_d1 = c3.selectbox("FIB Diff", diff_options, label_visibility="collapsed", key="f_d1")
-
-        c1.write("True / False")
-        tf_t1 = c2.number_input("TF count", min_value=0, value=3, label_visibility="collapsed", key="t_c1")
-        tf_d1 = c3.selectbox("TF Diff", diff_options, label_visibility="collapsed", key="t_d1")
-
-        c1.write("Short Answer")
-        short_t1 = c2.number_input("Short count", min_value=0, value=3, label_visibility="collapsed", key="s_c1")
-        short_d1 = c3.selectbox("Short Diff", diff_options, label_visibility="collapsed", key="s_d1")
-
-        # FIX: सिर्फ एक Long Answer का Box यहाँ मौजूद है!
-        c1.write("Long Answer")
-        long_t1 = c2.number_input("Long count", min_value=0, value=2, label_visibility="collapsed", key="l_c1")
-        long_d1 = c3.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d1")
-        
-        submit_t1 = st.form_submit_button("🚀 Generate Quick Paper")
+        submit_t1 = st.form_submit_button("🚀 Generate Paper from Syllabus")
 
     if submit_t1:
         if not api_key: st.error("API Key is missing!")
         elif not subject_t1 or not syllabus_t1: st.error("Please fill in the Subject and Syllabus.")
         else:
             with st.spinner(f"Generating {board_format} Paper... Please wait."):
-                total_q1 = mcq_t1 + fib_t1 + tf_t1 + short_t1 + long_t1
-                q_reqs1 = build_question_prompt(mcq_t1, mcq_d1, fib_t1, fib_d1, tf_t1, tf_d1, short_t1, short_d1, long_t1, long_d1)
+                total_q = mcq_c + fib_c + tf_c + short_c + long_c
+                q_reqs = build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d)
                 board_rules = get_board_instructions(board_format)
                 
                 header1 = f"""
 # {inst_name}
 **Class:** {grade_t1} | **Subject:** {subject_t1} | **Pattern:** {board_format}  
-**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q1}
+**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}
 ***
                 """
+                prompt1 = f"""You are an expert educator. Create an exam paper covering strictly: {syllabus_t1}\n{board_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header1}\nGenerate exactly the following questions:\n{q_reqs}"""
                 
-                prompt1 = f"""
-                You are an expert educator. Create an exam paper covering strictly: {syllabus_t1}
-                {board_rules}
-                
-                You MUST start your response EXACTLY with this formatting header:
-                {header1}
-                
-                Generate exactly the following questions:
-                {q_reqs1}
-                """
                 try:
                     model = genai.GenerativeModel(working_model_name)
                     response = model.generate_content(prompt1)
@@ -238,24 +218,17 @@ with tab1:
                     st.markdown("---")
                     if inst_logo is not None:
                         col_space1, col_img, col_space2 = st.columns([2, 1, 2])
-                        with col_img:
-                            st.image(inst_logo, width=150)
-                            
+                        with col_img: st.image(inst_logo, width=150)
                     st.markdown(response.text)
                     st.markdown("---")
                     
                     final_html = create_a4_html(response.text)
-                    st.download_button(
-                        label="🖨️ Download A4 Paper (HTML/PDF)", 
-                        data=final_html, 
-                        file_name=f"{subject_t1}_{board_format}_Paper.html",
-                        mime="text/html"
-                    )
+                    st.download_button(label="🖨️ Download A4 Paper (HTML/PDF)", data=final_html, file_name=f"{subject_t1}_Paper.html", mime="text/html")
                 except Exception as e:
                     st.error(f"API Error: {e}")
 
 # ------------------------------------------
-# TAB 2: NEW FEATURE (PDF Based)
+# TAB 2: PDF BASED
 # ------------------------------------------
 with tab2:
     with st.form("pdf_gen_form"):
@@ -266,35 +239,10 @@ with tab2:
         with col5: end_p = st.number_input("End Page", min_value=1, value=5)
             
         col6, col7 = st.columns(2)
-        with col6: subject_t2 = st.text_input("Subject", key="sub2")
-        with col7: topic_t2 = st.text_input("Specific Topic", key="top2")
+        with col6: subject_t2 = st.text_input("Subject")
+        with col7: topic_t2 = st.text_input("Specific Topic")
             
-        st.markdown("#### Question Setup")
-        c4, c5, c6 = st.columns([2, 1, 2])
-        c4.markdown("**Type**"); c5.markdown("**Count**"); c6.markdown("**Difficulty**")
-        
-        c4.write("Multiple Choice (MCQs)")
-        mcq_t2 = c5.number_input("MCQ count", min_value=0, value=5, label_visibility="collapsed", key="m_c2")
-        mcq_d2 = c6.selectbox("MCQ Diff", diff_options, label_visibility="collapsed", key="m_d2")
-
-        c4.write("Fill in the Blanks")
-        fib_t2 = c5.number_input("FIB count", min_value=0, value=3, label_visibility="collapsed", key="f_c2")
-        fib_d2 = c6.selectbox("FIB Diff", diff_options, label_visibility="collapsed", key="f_d2")
-
-        c4.write("True / False")
-        tf_t2 = c5.number_input("TF count", min_value=0, value=3, label_visibility="collapsed", key="t_c2")
-        tf_d2 = c6.selectbox("TF Diff", diff_options, label_visibility="collapsed", key="t_d2")
-
-        c4.write("Short Answer")
-        short_t2 = c5.number_input("Short count", min_value=0, value=3, label_visibility="collapsed", key="s_c2")
-        short_d2 = c6.selectbox("Short Diff", diff_options, label_visibility="collapsed", key="s_d2")
-
-        # FIX: सिर्फ एक Long Answer का Box यहाँ मौजूद है!
-        c4.write("Long Answer")
-        long_t2 = c5.number_input("Long count", min_value=0, value=2, label_visibility="collapsed", key="l_c2")
-        long_d2 = c6.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d2")
-
-        submit_t2 = st.form_submit_button("📑 Extract & Generate Paper")
+        submit_t2 = st.form_submit_button("📑 Extract & Generate from PDF")
 
     if submit_t2:
         if not api_key: st.error("API Key is missing!")
@@ -303,38 +251,18 @@ with tab2:
         else:
             with st.spinner(f"Reading PDF & Generating {board_format} Paper... Please wait."):
                 document_text = extract_text_from_pdf(uploaded_pdf, start_p, end_p)
-                total_q2 = mcq_t2 + fib_t2 + tf_t2 + short_t2 + long_t2
-                q_reqs2 = build_question_prompt(mcq_t2, mcq_d2, fib_t2, fib_d2, tf_t2, tf_d2, short_t2, short_d2, long_t2, long_d2)
+                total_q = mcq_c + fib_c + tf_c + short_c + long_c
+                q_reqs = build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d)
                 board_rules = get_board_instructions(board_format)
                 
                 header2 = f"""
 # {inst_name}
 **Subject:** {subject_t2} | **Topic:** {topic_t2} | **Pattern:** {board_format}  
-**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q2}
+**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}
 ***
                 """
+                prompt2 = f"""You are an expert exam creator. Generate an exam ONLY for the topic requested below using the provided text.\n- Subject: {subject_t2}\n- Target Topic: {topic_t2}\nCRITICAL INSTRUCTIONS:\n1. Ignore any text NOT related to '{topic_t2}'.\n2. Extract questions STRICTLY from the text provided below.\n{board_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header2}\nGenerate exactly the following questions:\n{q_reqs}\nTextbook text:\n---\n{document_text}\n---"""
                 
-                prompt2 = f"""
-                You are an expert exam creator. Generate an exam ONLY for the topic requested below using the provided text.
-                - Subject: {subject_t2}
-                - Target Topic: {topic_t2}
-                CRITICAL INSTRUCTIONS:
-                1. Ignore any text NOT related to '{topic_t2}'.
-                2. Extract questions STRICTLY from the text provided below.
-                
-                {board_rules}
-                
-                You MUST start your response EXACTLY with this formatting header:
-                {header2}
-                
-                Generate exactly the following questions:
-                {q_reqs2}
-                
-                Textbook text:
-                ---
-                {document_text}
-                ---
-                """
                 try:
                     model = genai.GenerativeModel(working_model_name)
                     response = model.generate_content(prompt2)
@@ -343,18 +271,11 @@ with tab2:
                     st.markdown("---")
                     if inst_logo is not None:
                         col_space3, col_img2, col_space4 = st.columns([2, 1, 2])
-                        with col_img2:
-                            st.image(inst_logo, width=150)
-                            
+                        with col_img2: st.image(inst_logo, width=150)
                     st.markdown(response.text)
                     st.markdown("---")
                     
                     final_html = create_a4_html(response.text)
-                    st.download_button(
-                        label="🖨️ Download A4 Paper (HTML/PDF)", 
-                        data=final_html, 
-                        file_name=f"{topic_t2}_{board_format}_Paper.html",
-                        mime="text/html"
-                    )
+                    st.download_button(label="🖨️ Download A4 Paper (HTML/PDF)", data=final_html, file_name=f"{topic_t2}_Paper.html", mime="text/html")
                 except Exception as e:
                     st.error(f"API Error: {e}")
