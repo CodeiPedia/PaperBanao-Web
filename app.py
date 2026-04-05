@@ -78,7 +78,6 @@ def build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short
     if long_c > 0:  reqs.append(f"- {long_c} Long Answer Questions (Diff: {long_d}).")
     
     if not reqs: return "No questions requested."
-    # FIX: Strictly forced AI to use EXACT heading for Answer Key
     return "\n".join(reqs) + "\n\n*CRITICAL: Put ALL the answers/solutions at the very end of the document. You MUST use the exact heading '# Answer Key' for this section. Do NOT write answers immediately after the questions.*"
 
 def get_board_instructions(board):
@@ -91,9 +90,8 @@ def get_board_instructions(board):
     else:
         return "Format the paper beautifully as a standard ready-to-print exam paper with clear sections."
 
-# === NEW FEATURE: HTML A4 GENERATOR WITH PAGE BREAK & MATH SUPPORT ===
+# === HTML A4 GENERATOR WITH PAGE BREAK & MATH SUPPORT ===
 def create_a4_html(md_content):
-    # MAGIC FIX: Find "Answer Key" and insert a Page Break code right before it!
     md_content = md_content.replace("# Answer Key", "<div style='page-break-before: always;'></div>\n# Answer Key")
     md_content = md_content.replace("# ANSWER KEY", "<div style='page-break-before: always;'></div>\n# ANSWER KEY")
     md_content = md_content.replace("## Answer Key", "<div style='page-break-before: always;'></div>\n## Answer Key")
@@ -158,7 +156,6 @@ def create_a4_html(md_content):
     </html>
     """
     return html_template
-
 
 # ==========================================
 # --- CREATE TABS FOR PROFESSIONAL UI ---
