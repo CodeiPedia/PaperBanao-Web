@@ -2,6 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 import PyPDF2
 import os
+import markdown # नया Import
 
 # --- Page Config ---
 st.set_page_config(page_title="PaperBanao - AI Question Paper", page_icon="📝", layout="centered")
@@ -24,17 +25,14 @@ st.sidebar.header("⚙️ System Settings")
 api_key = st.sidebar.text_input("Enter Google Gemini API Key:", type="password")
 
 # --- AUTO-DETECT MODEL LOGIC ---
-working_model_name = "gemini-1.5-flash" # Fallback Default
+working_model_name = "gemini-1.5-flash" 
 if api_key:
     genai.configure(api_key=api_key)
     try:
-        # यह code आपके API key पर मौजूद चालू models की list निकालेगा
         valid_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         if valid_models:
-            # 1.5 flash ढूँढने की कोशिश करेगा, नहीं मिला तो जो भी चालू है वो उठा लेगा
             flash_models = [m for m in valid_models if '1.5-flash' in m]
             working_model_name = flash_models[0] if flash_models else valid_models[0]
-            
         st.sidebar.success("✅ API Connected!")
     except Exception as e:
         st.sidebar.error("Invalid API Key or Network Issue.")
@@ -84,13 +82,67 @@ def build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short
 
 def get_board_instructions(board):
     if board == "CBSE":
-        return "CRITICAL BOARD FORMAT: Structure the paper strictly matching CBSE board exam patterns. Group questions logically into Sections (e.g., Section A, B, C, D) based on objective vs subjective types. Add standard CBSE General Instructions at the top."
+        return "CRITICAL BOARD FORMAT: Structure the paper strictly matching CBSE board exam patterns. Group questions logically into Sections. Add standard CBSE General Instructions at the top."
     elif board == "ICSE":
-        return "CRITICAL BOARD FORMAT: Structure the paper strictly matching ICSE board exam patterns. Divide the paper into Section A (Compulsory short/objective questions) and Section B (Subjective questions). Add standard ICSE General Instructions."
+        return "CRITICAL BOARD FORMAT: Structure the paper strictly matching ICSE board exam patterns. Add standard ICSE General Instructions."
     elif board == "BSEB (Bihar Board)":
-        return "CRITICAL BOARD FORMAT: Structure the paper strictly matching BSEB (Bihar School Examination Board) patterns. Clearly divide the paper into two main parts: 'Section-A: Objective Type Questions' (All MCQs) and 'Section-B: Non-Objective / Subjective Type Questions' (Short & Long Answers). Add standard BSEB General Instructions."
+        return "CRITICAL BOARD FORMAT: Structure the paper strictly matching BSEB (Bihar School Examination Board) patterns. Divide into 'Section-A: Objective Type' and 'Section-B: Subjective Type'. Add standard BSEB General Instructions."
     else:
         return "Format the paper beautifully as a standard ready-to-print exam paper with clear sections."
+
+# === NEW FEATURE: HTML A4 GENERATOR ===
+def create_a4_html(md_content):
+    # Convert AI Markdown to HTML
+    html_body = markdown.markdown(md_content)
+    
+    # CSS Magic for A4 Print
+    html_template = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Question Paper</title>
+        <style>
+            body {{
+                background-color: #f0f0f0;
+                font-family: 'Times New Roman', Times, serif; /* Exam paper standard font */
+                margin: 0;
+                padding: 20px;
+                display: flex;
+                justify-content: center;
+            }}
+            .a4-page {{
+                background-color: white;
+                width: 210mm;
+                min-height: 297mm;
+                padding: 20mm;
+                box-sizing: border-box;
+                box-shadow: 0 0 10px rgba(0,0,0,0.2);
+            }}
+            /* Print CSS: Removes background and margins when printing */
+            @media print {{
+                body {{ background-color: white; padding: 0; display: block; }}
+                .a4-page {{ box-shadow: none; width: 100%; padding: 0; margin: 0; }}
+                @page {{ size: A4; margin: 20mm; }}
+            }}
+            h1, h2, h3 {{ text-align: center; color: #111; }}
+            p, li {{ font-size: 16px; line-height: 1.5; color: #000; }}
+            hr {{ border: 1px solid #ccc; margin: 20px 0; }}
+        </style>
+    </head>
+    <body>
+        <div class="a4-page">
+            {html_body}
+        </div>
+        <script>
+            // Optional: Auto-open print dialog
+            // window.onload = function() {{ window.print(); }}
+        </script>
+    </body>
+    </html>
+    """
+    return html_template
+
 
 # ==========================================
 # --- CREATE TABS FOR PROFESSIONAL UI ---
@@ -148,7 +200,7 @@ with tab1:
                 
                 header1 = f"""
 # {inst_name}
-**Class:** {grade_t1} | **Subject:** {subject_t1} | **Pattern:** {board_format}
+**Class:** {grade_t1} | **Subject:** {subject_t1} | **Pattern:** {board_format}  
 **Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q1}
 ***
                 """
@@ -164,7 +216,6 @@ with tab1:
                 {q_reqs1}
                 """
                 try:
-                    # MAGIC HAPPENS HERE: It uses the auto-detected model
                     model = genai.GenerativeModel(working_model_name)
                     response = model.generate_content(prompt1)
                     st.success("Success! Your paper is ready.")
@@ -178,7 +229,14 @@ with tab1:
                     st.markdown(response.text)
                     st.markdown("---")
                     
-                    st.download_button("📥 Download Paper (Text)", data=response.text, file_name=f"{subject_t1}_{board_format}_Paper.txt")
+                    # --- NEW DOWNLOAD LOGIC ---
+                    final_html = create_a4_html(response.text)
+                    st.download_button(
+                        label="🖨️ Download A4 Paper (HTML/PDF)", 
+                        data=final_html, 
+                        file_name=f"{subject_t1}_{board_format}_Paper.html",
+                        mime="text/html"
+                    )
                 except Exception as e:
                     st.error(f"API Error: {e}")
 
@@ -236,7 +294,7 @@ with tab2:
                 
                 header2 = f"""
 # {inst_name}
-**Subject:** {subject_t2} | **Topic:** {topic_t2} | **Pattern:** {board_format}
+**Subject:** {subject_t2} | **Topic:** {topic_t2} | **Pattern:** {board_format}  
 **Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q2}
 ***
                 """
@@ -263,7 +321,6 @@ with tab2:
                 ---
                 """
                 try:
-                    # MAGIC HAPPENS HERE: It uses the auto-detected model
                     model = genai.GenerativeModel(working_model_name)
                     response = model.generate_content(prompt2)
                     st.success("Success! Your paper is ready.")
@@ -277,6 +334,13 @@ with tab2:
                     st.markdown(response.text)
                     st.markdown("---")
                     
-                    st.download_button("📥 Download PDF Paper (Text)", data=response.text, file_name=f"{topic_t2}_{board_format}_Paper.txt")
+                    # --- NEW DOWNLOAD LOGIC ---
+                    final_html = create_a4_html(response.text)
+                    st.download_button(
+                        label="🖨️ Download A4 Paper (HTML/PDF)", 
+                        data=final_html, 
+                        file_name=f"{topic_t2}_{board_format}_Paper.html",
+                        mime="text/html"
+                    )
                 except Exception as e:
                     st.error(f"API Error: {e}")
