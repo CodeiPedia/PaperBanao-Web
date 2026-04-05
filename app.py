@@ -6,8 +6,7 @@ import markdown
 import sqlite3
 from datetime import datetime
 import re
-
-# --- NEW IMPORTS FOR WORD DOCUMENT EXPORT ---
+import uuid
 from docx import Document
 from io import BytesIO
 
@@ -42,8 +41,8 @@ def delete_paper(paper_id):
     conn.close()
 
 # --- INITIALIZE SESSION STATE (MEMORY) ---
-if "paper_content" not in st.session_state:
-    st.session_state.paper_content = ""
+if "blocks" not in st.session_state:
+    st.session_state.blocks = [] # Store individual question cards
 if "file_name" not in st.session_state:
     st.session_state.file_name = "PaperBanao_Exam"
 if "current_subject" not in st.session_state:
@@ -66,7 +65,6 @@ with col_title:
 st.sidebar.header("⚙️ System Settings")
 api_key = st.sidebar.text_input("Enter Google Gemini API Key:", type="password")
 
-# --- AUTO-DETECT MODEL LOGIC ---
 working_model_name = "gemini-1.5-flash" 
 if api_key:
     genai.configure(api_key=api_key)
@@ -83,7 +81,6 @@ else:
 
 st.sidebar.markdown("---")
 st.sidebar.header("🏫 Institute Details")
-
 inst_logo = st.sidebar.file_uploader("Upload Institute Logo", type=["png", "jpg", "jpeg"])
 inst_name = st.sidebar.text_input("Institute / School Name", value="My Success Academy")
 exam_time = st.sidebar.text_input("Exam Time (Duration)", value="2 Hours")
@@ -96,20 +93,12 @@ inst_contact = st.sidebar.text_input("Contact Number", value="+91 9876543210")
 
 st.sidebar.markdown("---")
 st.sidebar.header("📜 Exam Format & Language")
-board_format = st.sidebar.selectbox(
-    "Select Board Pattern", 
-    ["Standard / Default", "BSEB (Bihar Board)", "CBSE", "ICSE"]
-)
-
-paper_language = st.sidebar.selectbox(
-    "Paper Language", 
-    ["English", "Hindi", "Bilingual (English + Hindi)"]
-)
+board_format = st.sidebar.selectbox("Select Board Pattern", ["Standard / Default", "BSEB (Bihar Board)", "CBSE", "ICSE"])
+paper_language = st.sidebar.selectbox("Paper Language", ["English", "Hindi", "Bilingual (English + Hindi)"])
 
 st.sidebar.markdown("---")
 st.sidebar.header("🔑 Output Settings")
 include_answer_key = st.sidebar.toggle("Include Answer Key at the end", value=True)
-
 
 # --- Helper Functions ---
 def extract_text_from_pdf(uploaded_file, start_page, end_page):
@@ -122,42 +111,45 @@ def extract_text_from_pdf(uploaded_file, start_page, end_page):
         for i in range(start_index, end_index):
             extracted_text += reader.pages[i].extract_text() + "\n"
         return extracted_text
-    except Exception as e:
-        return f"Error reading PDF: {e}"
+    except Exception:
+        return ""
 
 def build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d, include_answers):
     reqs = []
-    if mcq_c > 0: reqs.append(f"- {mcq_c} Multiple Choice Questions (Diff: {mcq_d}). Provide 4 options.")
+    if mcq_c > 0: reqs.append(f"- {mcq_c} Multiple Choice Questions (Diff: {mcq_d}).")
     if fib_c > 0: reqs.append(f"- {fib_c} Fill in the Blanks (Diff: {fib_d}).")
     if tf_c > 0:  reqs.append(f"- {tf_c} True/False Questions (Diff: {tf_d}).")
     if short_c > 0: reqs.append(f"- {short_c} Short Answer Questions (Diff: {short_d}).")
     if long_c > 0:  reqs.append(f"- {long_c} Long Answer Questions (Diff: {long_d}).")
     if not reqs: return "No questions requested."
     
+    # MAGIC: Using ||| delimiter to break the paper into UI Cards
+    base_prompt = "\n".join(reqs) + "\n\nCRITICAL FORMATTING RULE: You MUST separate the Main Header, EVERY SINGLE Question (with its options), and the Answer Key using exactly this delimiter: `|||` on a new line."
+    
     if include_answers:
-        return "\n".join(reqs) + "\n\n*CRITICAL: Put ALL the answers/solutions at the very end of the document. You MUST use the exact English heading '# Answer Key' for this section. Do NOT write answers immediately after the questions.*"
+        return base_prompt + "\nPut ALL the answers at the very end. You MUST use the exact English heading '# Answer Key' for this section. Separate the answer key block with `|||` as well."
     else:
-        return "\n".join(reqs) + "\n\n*CRITICAL: DO NOT provide any answers, solutions, or answer keys. Provide ONLY the questions. Stop generating after the last question.*"
+        return base_prompt + "\nDO NOT provide any answers or answer keys. Provide ONLY the questions."
 
 def get_board_instructions(board):
-    if board == "CBSE": return "CRITICAL BOARD FORMAT: Structure the paper strictly matching CBSE board exam patterns. Group questions logically into Sections."
-    elif board == "ICSE": return "CRITICAL BOARD FORMAT: Structure the paper strictly matching ICSE board exam patterns."
-    elif board == "BSEB (Bihar Board)": return "CRITICAL BOARD FORMAT: Structure the paper strictly matching BSEB (Bihar School Examination Board) patterns. Divide into 'Section-A: Objective Type' and 'Section-B: Subjective Type'."
-    else: return "Format the paper beautifully as a standard ready-to-print exam paper with clear sections."
+    return f"Structure the paper matching {board} patterns. Group questions logically."
 
 def get_language_instructions(lang):
-    if lang == "Hindi": return "CRITICAL LANGUAGE FORMAT: Generate the ENTIRE exam paper strictly in Hindi language."
-    elif lang == "Bilingual (English + Hindi)": return "CRITICAL LANGUAGE FORMAT: Generate the exam paper in a BILINGUAL format. Write it first in English, immediately followed by exact Hindi translation."
-    else: return "CRITICAL LANGUAGE FORMAT: Generate the paper in English."
+    if lang == "Hindi": return "Generate the ENTIRE exam paper strictly in Hindi language."
+    elif lang == "Bilingual (English + Hindi)": return "Generate in a BILINGUAL format (English first, followed by exact Hindi translation below it)."
+    else: return "Generate the paper in English."
+
+def regenerate_single_question(old_text):
+    prompt = f"You are an expert exam creator. Please generate a NEW, completely different question to replace this old one. Keep the same difficulty, language, and format (e.g. if it was an MCQ, give a new MCQ with 4 options).\n\nOLD QUESTION:\n{old_text}\n\nProvide ONLY the new question text without any introductory conversation."
+    model = genai.GenerativeModel(working_model_name)
+    return model.generate_content(prompt).text.strip()
 
 def create_a4_html(md_content, i_name, i_address, i_contact):
     md_content = md_content.replace("# Answer Key", "<div style='page-break-before: always;'></div>\n# Answer Key")
     md_content = md_content.replace("# ANSWER KEY", "<div style='page-break-before: always;'></div>\n# ANSWER KEY")
     md_content = md_content.replace("## Answer Key", "<div style='page-break-before: always;'></div>\n## Answer Key")
-
     html_body = markdown.markdown(md_content)
     footer_html = f"""<div class="footer"><p><strong>{i_name}</strong> | 📍 {i_address} | 📞 {i_contact}</p></div>"""
-    
     html_template = f"""
     <!DOCTYPE html>
     <html lang="en">
@@ -178,61 +170,39 @@ def create_a4_html(md_content, i_name, i_address, i_contact):
     """
     return html_template
 
-# === NEW: GENERATE MS WORD DOCUMENT (.docx) ===
 def create_word_docx(md_content, i_name, i_address, i_contact):
     doc = Document()
-    
-    # 1. Add Institute Name Header
     header = doc.add_heading(i_name, level=0)
-    header.alignment = 1 # Center alignment
-    
-    # 2. Parse Markdown Content into Word format
+    header.alignment = 1 
     lines = md_content.split('\n')
     for line in lines:
-        if line.strip() == "":
-            continue
-            
-        # Detect Answer Key and force Page Break in MS Word
+        if line.strip() == "": continue
         if "# Answer Key" in line or "# ANSWER KEY" in line or "## Answer Key" in line:
             doc.add_page_break()
             doc.add_heading("Answer Key", level=1)
             continue
-            
-        if line.startswith('# '):
-            doc.add_heading(line.replace('# ', ''), level=1)
-        elif line.startswith('## '):
-            doc.add_heading(line.replace('## ', ''), level=2)
-        elif line.startswith('### '):
-            doc.add_heading(line.replace('### ', ''), level=3)
+        if line.startswith('# '): doc.add_heading(line.replace('# ', ''), level=1)
+        elif line.startswith('## '): doc.add_heading(line.replace('## ', ''), level=2)
+        elif line.startswith('### '): doc.add_heading(line.replace('### ', ''), level=3)
         else:
             p = doc.add_paragraph()
-            # Simple Bold Parsing for MS Word (**text**)
             parts = re.split(r'\*\*(.*?)\*\*', line)
             for i, part in enumerate(parts):
-                if i % 2 == 1: # It is bold text
-                    p.add_run(part).bold = True
-                else:
-                    p.add_run(part)
-                    
-    # 3. Add Custom Footer at the end
+                if i % 2 == 1: p.add_run(part).bold = True
+                else: p.add_run(part)
     doc.add_paragraph("\n")
     footer = doc.add_paragraph(f"📍 {i_address} | 📞 {i_contact}\nGenerated securely by PaperBanao AI")
-    footer.alignment = 1 # Center
-    
-    # Save document into memory to download directly
+    footer.alignment = 1
     bio = BytesIO()
     doc.save(bio)
     return bio.getvalue()
 
 
 # ==========================================
-# --- MAIN LAYOUT: TABS FOR APP NAVIGATION ---
+# --- MAIN LAYOUT ---
 # ==========================================
 tab_create, tab_history = st.tabs(["🏠 Create New Paper", "🗂️ Past Papers History"])
 
-# ------------------------------------------
-# TAB 1: CREATE NEW PAPER
-# ------------------------------------------
 with tab_create:
     st.markdown("### 1. Choose Paper Source")
     source_choice = st.radio("Select Method:", ["⚡ Quick Generate (By Syllabus)", "📄 Deep Extract (From PDF Book)"], horizontal=True, label_visibility="collapsed")
@@ -255,7 +225,6 @@ with tab_create:
         with col7: top2 = st.text_input("Specific Topic (e.g., Basic Electricity)")
 
     st.markdown("---")
-
     st.markdown("### 2. Set Questions & Difficulty")
     diff_options = ["Easy", "Medium", "Hard", "Mixed"]
 
@@ -296,79 +265,82 @@ with tab_create:
             board_rules = get_board_instructions(board_format)
             lang_rules = get_language_instructions(paper_language)
             
-            if "Syllabus" in source_choice:
-                if not sub1 or not syl1: st.error("Please fill in the Subject and Syllabus details.")
-                else:
-                    with st.spinner(f"Generating {board_format} Paper in {paper_language}..."):
-                        header = f"""# {inst_name}\n**Class:** {grade1} | **Subject:** {sub1} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"""
-                        prompt = f"You are an expert educator. Create an exam paper covering strictly: {syl1}\n{board_rules}\n{lang_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header}\nGenerate exactly the following questions:\n{q_reqs}"
-                        try:
-                            model = genai.GenerativeModel(working_model_name)
-                            response = model.generate_content(prompt)
-                            st.session_state.paper_content = response.text
-                            st.session_state.file_name = f"{sub1}_Paper"
-                            st.session_state.current_subject = f"{sub1} (Class: {grade1})"
-                        except Exception as e: st.error(f"API Error: {e}")
-            else:
-                if not up_pdf or not sub2 or not top2: st.error("Please upload the PDF and fill in the Subject and Topic.")
-                else:
-                    with st.spinner(f"Reading PDF & Generating {board_format} Paper in {paper_language}..."):
-                        document_text = extract_text_from_pdf(up_pdf, start_p, end_p)
-                        header = f"""# {inst_name}\n**Subject:** {sub2} | **Topic:** {top2} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"""
-                        prompt = f"You are an expert exam creator. Generate an exam ONLY for the topic requested below using the provided text.\n- Subject: {sub2}\n- Target Topic: {top2}\nCRITICAL INSTRUCTIONS:\n1. Ignore any text NOT related to '{top2}'.\n2. Extract questions STRICTLY from the text provided below.\n{board_rules}\n{lang_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header}\nGenerate exactly the following questions:\n{q_reqs}\nTextbook text:\n---\n{document_text}\n---"
-                        try:
-                            model = genai.GenerativeModel(working_model_name)
-                            response = model.generate_content(prompt)
-                            st.session_state.paper_content = response.text
-                            st.session_state.file_name = f"{top2}_Paper"
-                            st.session_state.current_subject = f"{sub2} - {top2}"
-                        except Exception as e: st.error(f"API Error: {e}")
+            prompt = ""
+            if "Syllabus" in source_choice and sub1 and syl1:
+                header = f"# {inst_name}\n**Class:** {grade1} | **Subject:** {sub1} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"
+                prompt = f"You are an expert educator. Create an exam paper covering strictly: {syl1}\n{board_rules}\n{lang_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header}\nGenerate exactly the following questions:\n{q_reqs}"
+                st.session_state.file_name = f"{sub1}_Paper"
+                st.session_state.current_subject = f"{sub1} (Class: {grade1})"
+            elif "Deep Extract" in source_choice and up_pdf and sub2 and top2:
+                document_text = extract_text_from_pdf(up_pdf, start_p, end_p)
+                header = f"# {inst_name}\n**Subject:** {sub2} | **Topic:** {top2} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"
+                prompt = f"You are an expert exam creator. Generate an exam ONLY for the topic requested below using the provided text.\n- Subject: {sub2}\n- Target Topic: {top2}\nCRITICAL INSTRUCTIONS:\n1. Ignore any text NOT related to '{top2}'.\n2. Extract questions STRICTLY from the text provided below.\n{board_rules}\n{lang_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header}\nGenerate exactly the following questions:\n{q_reqs}\nTextbook text:\n---\n{document_text}\n---"
+                st.session_state.file_name = f"{top2}_Paper"
+                st.session_state.current_subject = f"{sub2} - {top2}"
 
-    # --- LIVE EDIT & DOWNLOAD SECTION ---
-    if st.session_state.paper_content:
+            if prompt:
+                with st.spinner(f"Generating {board_format} Paper in {paper_language}..."):
+                    try:
+                        model = genai.GenerativeModel(working_model_name)
+                        response = model.generate_content(prompt)
+                        # SPLIT THE RESPONSE INTO BLOCKS (CARDS)
+                        raw_blocks = response.text.split("|||")
+                        st.session_state.blocks = [{'id': str(uuid.uuid4()), 'text': b.strip()} for b in raw_blocks if b.strip()]
+                    except Exception as e: st.error(f"API Error: {e}")
+
+    # ==========================================
+    # --- 4. QUESTION BANK UI (CARDS) ---
+    # ==========================================
+    if st.session_state.blocks:
         st.markdown("---")
-        st.markdown("### ✍️ Edit Your Paper & Save")
+        st.markdown("### 🧩 Question Bank Manager")
+        st.success("💡 **Pro Tip:** You can edit the text inside any box below. Don't like a question? Click **Regenerate** to get a new one, or **Delete** to remove it completely!")
         
-        edited_paper = st.text_area("Live Editor (Markdown format):", value=st.session_state.paper_content, height=450)
+        # Display each block as a card
+        for i, block in enumerate(st.session_state.blocks):
+            with st.container(border=True):
+                # Text Area for manual edits
+                st.session_state.blocks[i]['text'] = st.text_area(f"Block {i}", value=block['text'], key=f"edit_{block['id']}", height=120, label_visibility="collapsed")
+                
+                # Buttons row
+                col1, col2, col3 = st.columns([1, 1, 4])
+                with col1:
+                    if st.button("🗑️ Delete", key=f"del_{block['id']}", use_container_width=True):
+                        st.session_state.blocks.pop(i)
+                        st.rerun()
+                with col2:
+                    if st.button("🔄 Regenerate", key=f"reg_{block['id']}", use_container_width=True):
+                        with st.spinner("Generating new question..."):
+                            new_text = regenerate_single_question(block['text'])
+                            st.session_state.blocks[i]['text'] = new_text
+                            st.rerun()
+
+        # Re-assemble the paper from blocks
+        final_markdown_paper = "\n\n".join([b['text'] for b in st.session_state.blocks])
+        
+        st.markdown("---")
+        st.markdown("### 🖨️ Finalize & Download")
         
         with st.expander("👁️ Preview Final Paper Layout", expanded=False):
             if inst_logo is not None:
                 col_img = st.columns([2, 1, 2])[1]
                 col_img.image(inst_logo, width=150)
-            st.markdown(edited_paper)
+            st.markdown(final_markdown_paper)
         
-        st.markdown("<br>", unsafe_allow_html=True)
+        final_html = create_a4_html(final_markdown_paper, inst_name, inst_address, inst_contact)
+        final_word = create_word_docx(final_markdown_paper, inst_name, inst_address, inst_contact)
         
-        # Format Downloads
-        final_html = create_a4_html(edited_paper, inst_name, inst_address, inst_contact)
-        final_word = create_word_docx(edited_paper, inst_name, inst_address, inst_contact)
-        
-        # --- NEW: THREE BUTTONS (HTML, WORD, SAVE) ---
         col_dl_h, col_dl_w, col_save = st.columns(3)
         with col_dl_h:
-            st.download_button(
-                label="🖨️ Download HTML (A4 Print)", 
-                data=final_html, 
-                file_name=st.session_state.file_name + ".html", 
-                mime="text/html",
-                use_container_width=True
-            )
+            st.download_button("🖨️ Download HTML (A4 Print)", data=final_html, file_name=st.session_state.file_name + ".html", mime="text/html", use_container_width=True)
         with col_dl_w:
-            st.download_button(
-                label="📄 Download MS Word (.docx)", 
-                data=final_word, 
-                file_name=st.session_state.file_name + ".docx", 
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                use_container_width=True
-            )
+            st.download_button("📄 Download MS Word", data=final_word, file_name=st.session_state.file_name + ".docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
         with col_save:
             if st.button("💾 Save to Past Papers", use_container_width=True):
-                # We save the "Edited Raw Text" in DB so we can generate HTML/Word later too!
                 conn = sqlite3.connect('paperbanao.db')
                 c = conn.cursor()
                 current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
-                c.execute("INSERT INTO papers (date, subject, board, content) VALUES (?, ?, ?, ?)",
-                          (current_time, st.session_state.current_subject, board_format, edited_paper))
+                c.execute("INSERT INTO papers (date, subject, board, content) VALUES (?, ?, ?, ?)", (current_time, st.session_state.current_subject, board_format, final_markdown_paper))
                 conn.commit()
                 conn.close()
                 st.success("✅ Paper saved! Check the 'Past Papers History' tab.")
@@ -378,8 +350,6 @@ with tab_create:
 # ------------------------------------------
 with tab_history:
     st.markdown("### 🗂️ Your Saved Past Papers")
-    st.info("Download your previously generated papers in HTML or MS Word format.")
-    
     conn = sqlite3.connect('paperbanao.db')
     c = conn.cursor()
     c.execute("SELECT * FROM papers ORDER BY id DESC")
@@ -391,24 +361,16 @@ with tab_history:
     else:
         for paper in saved_papers:
             p_id, p_date, p_sub, p_board, p_content = paper
-            
             with st.expander(f"📄 {p_sub} | {p_board} | 🕒 {p_date}"):
-                
-                # If old papers have HTML saved directly instead of markdown, handle smoothly
                 if "<!DOCTYPE html>" in p_content:
-                    st.warning("Note: This is an older paper saved in HTML format. Word Download is unavailable for this specific file.")
+                    st.warning("Older paper saved in HTML format. Word Download unavailable.")
                     st.download_button("📥 Download HTML Paper", data=p_content, file_name=f"Saved_{p_id}.html", mime="text/html", key=f"dl_old_{p_id}")
                     if st.button("🗑️ Delete Paper", key=f"del_old_{p_id}", on_click=delete_paper, args=(p_id,)): st.rerun()
                 else:
-                    # Generate fresh HTML and Word files from DB Memory
                     hist_html = create_a4_html(p_content, inst_name, inst_address, inst_contact)
                     hist_word = create_word_docx(p_content, inst_name, inst_address, inst_contact)
-                    
                     c1, c2, c3 = st.columns(3)
-                    with c1:
-                        st.download_button("🖨️ Download HTML", data=hist_html, file_name=f"History_{p_id}.html", mime="text/html", key=f"dl_h_{p_id}", use_container_width=True)
-                    with c2:
-                        st.download_button("📄 Download Word", data=hist_word, file_name=f"History_{p_id}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_w_{p_id}", use_container_width=True)
+                    with c1: st.download_button("🖨️ Download HTML", data=hist_html, file_name=f"History_{p_id}.html", mime="text/html", key=f"dl_h_{p_id}", use_container_width=True)
+                    with c2: st.download_button("📄 Download Word", data=hist_word, file_name=f"History_{p_id}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_w_{p_id}", use_container_width=True)
                     with c3:
-                        if st.button("🗑️ Delete", key=f"del_{p_id}", on_click=delete_paper, args=(p_id,), use_container_width=True):
-                            st.rerun()
+                        if st.button("🗑️ Delete", key=f"del_{p_id}", on_click=delete_paper, args=(p_id,), use_container_width=True): st.rerun()
