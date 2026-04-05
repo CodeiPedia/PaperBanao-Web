@@ -78,7 +78,8 @@ def build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short
     if long_c > 0:  reqs.append(f"- {long_c} Long Answer Questions (Diff: {long_d}).")
     
     if not reqs: return "No questions requested."
-    return "\n".join(reqs) + "\n\n*CRITICAL: Put ALL the answers/solutions at the very end of the document on a new page titled 'Answer Key'. Do NOT write answers immediately after the questions.*"
+    # FIX: Strictly forced AI to use EXACT heading for Answer Key
+    return "\n".join(reqs) + "\n\n*CRITICAL: Put ALL the answers/solutions at the very end of the document. You MUST use the exact heading '# Answer Key' for this section. Do NOT write answers immediately after the questions.*"
 
 def get_board_instructions(board):
     if board == "CBSE":
@@ -90,8 +91,13 @@ def get_board_instructions(board):
     else:
         return "Format the paper beautifully as a standard ready-to-print exam paper with clear sections."
 
-# === NEW FEATURE: HTML A4 GENERATOR WITH MATH SUPPORT ===
+# === NEW FEATURE: HTML A4 GENERATOR WITH PAGE BREAK & MATH SUPPORT ===
 def create_a4_html(md_content):
+    # MAGIC FIX: Find "Answer Key" and insert a Page Break code right before it!
+    md_content = md_content.replace("# Answer Key", "<div style='page-break-before: always;'></div>\n# Answer Key")
+    md_content = md_content.replace("# ANSWER KEY", "<div style='page-break-before: always;'></div>\n# ANSWER KEY")
+    md_content = md_content.replace("## Answer Key", "<div style='page-break-before: always;'></div>\n## Answer Key")
+
     html_body = markdown.markdown(md_content)
     
     html_template = f"""
@@ -274,81 +280,4 @@ with tab2:
 
         c4.write("Fill in the Blanks")
         fib_t2 = c5.number_input("FIB count", min_value=0, value=3, label_visibility="collapsed", key="f_c2")
-        fib_d2 = c6.selectbox("FIB Diff", diff_options, label_visibility="collapsed", key="f_d2")
-
-        c4.write("True / False")
-        tf_t2 = c5.number_input("TF count", min_value=0, value=3, label_visibility="collapsed", key="t_c2")
-        tf_d2 = c6.selectbox("TF Diff", diff_options, label_visibility="collapsed", key="t_d2")
-
-        c4.write("Short Answer")
-        short_t2 = c5.number_input("Short count", min_value=0, value=3, label_visibility="collapsed", key="s_c2")
-        short_d2 = c6.selectbox("Short Diff", diff_options, label_visibility="collapsed", key="s_d2")
-
-        c4.write("Long Answer")
-        long_t2 = c5.number_input("Long count", min_value=0, value=2, label_visibility="collapsed", key="l_c2")
-        long_d2 = c6.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d2")
-
-        submit_t2 = st.form_submit_button("📑 Extract & Generate Paper")
-
-    if submit_t2:
-        if not api_key: st.error("API Key is missing!")
-        elif not uploaded_pdf: st.error("Please upload a PDF document.")
-        elif not subject_t2 or not topic_t2: st.error("Please fill in the Subject and Topic.")
-        else:
-            with st.spinner(f"Reading PDF & Generating {board_format} Paper... Please wait."):
-                document_text = extract_text_from_pdf(uploaded_pdf, start_p, end_p)
-                total_q2 = mcq_t2 + fib_t2 + tf_t2 + short_t2 + long_t2
-                q_reqs2 = build_question_prompt(mcq_t2, mcq_d2, fib_t2, fib_d2, tf_t2, tf_d2, short_t2, short_d2, long_t2, long_d2)
-                board_rules = get_board_instructions(board_format)
-                
-                header2 = f"""
-# {inst_name}
-**Subject:** {subject_t2} | **Topic:** {topic_t2} | **Pattern:** {board_format}  
-**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q2}
-***
-                """
-                
-                prompt2 = f"""
-                You are an expert exam creator. Generate an exam ONLY for the topic requested below using the provided text.
-                - Subject: {subject_t2}
-                - Target Topic: {topic_t2}
-                CRITICAL INSTRUCTIONS:
-                1. Ignore any text NOT related to '{topic_t2}'.
-                2. Extract questions STRICTLY from the text provided below.
-                
-                {board_rules}
-                
-                You MUST start your response EXACTLY with this formatting header:
-                {header2}
-                
-                Generate exactly the following questions:
-                {q_reqs2}
-                
-                Textbook text:
-                ---
-                {document_text}
-                ---
-                """
-                try:
-                    model = genai.GenerativeModel(working_model_name)
-                    response = model.generate_content(prompt2)
-                    st.success("Success! Your paper is ready.")
-                    
-                    st.markdown("---")
-                    if inst_logo is not None:
-                        col_space3, col_img2, col_space4 = st.columns([2, 1, 2])
-                        with col_img2:
-                            st.image(inst_logo, width=150)
-                            
-                    st.markdown(response.text)
-                    st.markdown("---")
-                    
-                    final_html = create_a4_html(response.text)
-                    st.download_button(
-                        label="🖨️ Download A4 Paper (HTML/PDF)", 
-                        data=final_html, 
-                        file_name=f"{topic_t2}_{board_format}_Paper.html",
-                        mime="text/html"
-                    )
-                except Exception as e:
-                    st.error(f"API Error: {e}")
+        fib_d2 = c6.selectbox("FIB Diff", diff_options, label_visibility="collapsed", key="
