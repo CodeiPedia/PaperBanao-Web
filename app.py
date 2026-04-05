@@ -17,11 +17,10 @@ from supabase import create_client, Client
 st.set_page_config(page_title="PaperBanao - AI Question Paper", page_icon="📝", layout="centered")
 
 # ==========================================
-# --- 🛑 SECRETS: PUT YOUR KEYS HERE ---
+# ==========================================
+# --- 🛑 SECRETS: PULLING KEYS SECURELY ---
 # ==========================================
 SERVER_API_KEY = st.secrets["GEMINI_API_KEY"]
-
-# अपनी Supabase की डिटेल्स यहाँ डालें 👇
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
@@ -30,12 +29,13 @@ SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 # ==========================================
 @st.cache_resource
 def init_supabase():
-    if SUPABASE_URL == "https://jwbnrviixkivbirvxara.supabase.co":
+    try:
+        return create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        st.error(f"Database Connection Error: {e}")
         return None
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 supabase: Client = init_supabase()
-
 # --- DB HELPER FUNCTIONS (NOW USING CLOUD) ---
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
