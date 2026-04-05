@@ -7,6 +7,12 @@ import markdown
 # --- Page Config ---
 st.set_page_config(page_title="PaperBanao - AI Question Paper", page_icon="📝", layout="centered")
 
+# --- INITIALIZE SESSION STATE (MEMORY FOR EDITING) ---
+if "paper_content" not in st.session_state:
+    st.session_state.paper_content = ""
+if "file_name" not in st.session_state:
+    st.session_state.file_name = "PaperBanao_Exam.html"
+
 # --- App Header & App Logo ---
 col_logo, col_title = st.columns([1, 5])
 with col_logo:
@@ -54,7 +60,6 @@ board_format = st.sidebar.selectbox(
     ["Standard / Default", "BSEB (Bihar Board)", "CBSE", "ICSE"]
 )
 
-# === FEATURE 1: LANGUAGE SELECTION ===
 paper_language = st.sidebar.selectbox(
     "Paper Language", 
     ["English", "Hindi", "Bilingual (English + Hindi)"]
@@ -81,28 +86,19 @@ def build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short
     if tf_c > 0:  reqs.append(f"- {tf_c} True/False Questions (Diff: {tf_d}).")
     if short_c > 0: reqs.append(f"- {short_c} Short Answer Questions (Diff: {short_d}).")
     if long_c > 0:  reqs.append(f"- {long_c} Long Answer Questions (Diff: {long_d}).")
-    
     if not reqs: return "No questions requested."
-    # Strict instruction to keep Answer Key heading in English for CSS page-break to work
-    return "\n".join(reqs) + "\n\n*CRITICAL: Put ALL the answers/solutions at the very end of the document. You MUST use the exact English heading '# Answer Key' for this section, even if the paper is in Hindi. Do NOT write answers immediately after the questions.*"
+    return "\n".join(reqs) + "\n\n*CRITICAL: Put ALL the answers/solutions at the very end of the document. You MUST use the exact English heading '# Answer Key' for this section. Do NOT write answers immediately after the questions.*"
 
 def get_board_instructions(board):
-    if board == "CBSE":
-        return "CRITICAL BOARD FORMAT: Structure the paper strictly matching CBSE board exam patterns. Group questions logically into Sections. Add standard CBSE General Instructions at the top."
-    elif board == "ICSE":
-        return "CRITICAL BOARD FORMAT: Structure the paper strictly matching ICSE board exam patterns. Add standard ICSE General Instructions."
-    elif board == "BSEB (Bihar Board)":
-        return "CRITICAL BOARD FORMAT: Structure the paper strictly matching BSEB (Bihar School Examination Board) patterns. Divide into 'Section-A: Objective Type' and 'Section-B: Subjective Type'. Add standard BSEB General Instructions."
-    else:
-        return "Format the paper beautifully as a standard ready-to-print exam paper with clear sections."
+    if board == "CBSE": return "CRITICAL BOARD FORMAT: Structure the paper strictly matching CBSE board exam patterns. Group questions logically into Sections. Add standard CBSE General Instructions at the top."
+    elif board == "ICSE": return "CRITICAL BOARD FORMAT: Structure the paper strictly matching ICSE board exam patterns. Add standard ICSE General Instructions."
+    elif board == "BSEB (Bihar Board)": return "CRITICAL BOARD FORMAT: Structure the paper strictly matching BSEB (Bihar School Examination Board) patterns. Divide into 'Section-A: Objective Type' and 'Section-B: Subjective Type'. Add standard BSEB General Instructions."
+    else: return "Format the paper beautifully as a standard ready-to-print exam paper with clear sections."
 
 def get_language_instructions(lang):
-    if lang == "Hindi":
-        return "CRITICAL LANGUAGE FORMAT: Generate the ENTIRE exam paper (including all instructions, section names, and questions) strictly in Hindi language."
-    elif lang == "Bilingual (English + Hindi)":
-        return "CRITICAL LANGUAGE FORMAT: Generate the exam paper in a BILINGUAL format. For every instruction and every question, write it first in English, immediately followed by its exact translation in Hindi below it."
-    else:
-        return "CRITICAL LANGUAGE FORMAT: Generate the paper in English."
+    if lang == "Hindi": return "CRITICAL LANGUAGE FORMAT: Generate the ENTIRE exam paper strictly in Hindi language."
+    elif lang == "Bilingual (English + Hindi)": return "CRITICAL LANGUAGE FORMAT: Generate the exam paper in a BILINGUAL format. For every instruction and every question, write it first in English, immediately followed by its exact translation in Hindi below it."
+    else: return "CRITICAL LANGUAGE FORMAT: Generate the paper in English."
 
 def create_a4_html(md_content):
     md_content = md_content.replace("# Answer Key", "<div style='page-break-before: always;'></div>\n# Answer Key")
@@ -142,12 +138,7 @@ def create_a4_html(md_content):
 # --- 1. CHOOSE PAPER SOURCE (TOP) ---
 # ==========================================
 st.markdown("### 1. Choose Paper Source")
-source_choice = st.radio(
-    "Select Method:", 
-    ["⚡ Quick Generate (By Syllabus)", "📄 Deep Extract (From PDF Book)"], 
-    horizontal=True, 
-    label_visibility="collapsed"
-)
+source_choice = st.radio("Select Method:", ["⚡ Quick Generate (By Syllabus)", "📄 Deep Extract (From PDF Book)"], horizontal=True, label_visibility="collapsed")
 
 sub1, grade1, syl1 = "", "", ""
 up_pdf, start_p, end_p, sub2, top2 = None, 1, 5, "", ""
@@ -209,7 +200,7 @@ with c3: long_d = st.selectbox("Long Diff", diff_options, label_visibility="coll
 st.markdown("---")
 
 # ==========================================
-# --- 3. GENERATE BUTTON (VERY BOTTOM) ---
+# --- 3. GENERATE BUTTON ---
 # ==========================================
 generate_btn = st.button("🚀 Generate Exam Paper", use_container_width=True)
 
@@ -222,55 +213,59 @@ if generate_btn:
         board_rules = get_board_instructions(board_format)
         lang_rules = get_language_instructions(paper_language)
         
-        # --- LOGIC FOR SYLLABUS ---
         if "Syllabus" in source_choice:
-            if not sub1 or not syl1:
-                st.error("Please fill in the Subject and Syllabus details.")
+            if not sub1 or not syl1: st.error("Please fill in the Subject and Syllabus details.")
             else:
                 with st.spinner(f"Generating {board_format} Paper in {paper_language}..."):
                     header = f"""# {inst_name}\n**Class:** {grade1} | **Subject:** {sub1} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"""
                     prompt = f"You are an expert educator. Create an exam paper covering strictly: {syl1}\n{board_rules}\n{lang_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header}\nGenerate exactly the following questions:\n{q_reqs}"
-                    
                     try:
                         model = genai.GenerativeModel(working_model_name)
                         response = model.generate_content(prompt)
-                        st.success("Success! Your paper is ready.")
-                        
-                        st.markdown("---")
-                        if inst_logo is not None:
-                            col_img = st.columns([2, 1, 2])[1]
-                            col_img.image(inst_logo, width=150)
-                        st.markdown(response.text)
-                        st.markdown("---")
-                        
-                        final_html = create_a4_html(response.text)
-                        st.download_button("🖨️ Download A4 Paper (HTML/PDF)", data=final_html, file_name=f"{sub1}_Paper.html", mime="text/html")
-                    except Exception as e:
-                        st.error(f"API Error: {e}")
-                        
-        # --- LOGIC FOR PDF ---
+                        st.session_state.paper_content = response.text
+                        st.session_state.file_name = f"{sub1}_Paper.html"
+                    except Exception as e: st.error(f"API Error: {e}")
         else:
-            if not up_pdf or not sub2 or not top2:
-                st.error("Please upload the PDF and fill in the Subject and Topic.")
+            if not up_pdf or not sub2 or not top2: st.error("Please upload the PDF and fill in the Subject and Topic.")
             else:
                 with st.spinner(f"Reading PDF & Generating {board_format} Paper in {paper_language}..."):
                     document_text = extract_text_from_pdf(up_pdf, start_p, end_p)
                     header = f"""# {inst_name}\n**Subject:** {sub2} | **Topic:** {top2} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"""
                     prompt = f"You are an expert exam creator. Generate an exam ONLY for the topic requested below using the provided text.\n- Subject: {sub2}\n- Target Topic: {top2}\nCRITICAL INSTRUCTIONS:\n1. Ignore any text NOT related to '{top2}'.\n2. Extract questions STRICTLY from the text provided below.\n{board_rules}\n{lang_rules}\nYou MUST start your response EXACTLY with this formatting header:\n{header}\nGenerate exactly the following questions:\n{q_reqs}\nTextbook text:\n---\n{document_text}\n---"
-                    
                     try:
                         model = genai.GenerativeModel(working_model_name)
                         response = model.generate_content(prompt)
-                        st.success("Success! Your paper is ready.")
-                        
-                        st.markdown("---")
-                        if inst_logo is not None:
-                            col_img = st.columns([2, 1, 2])[1]
-                            col_img.image(inst_logo, width=150)
-                        st.markdown(response.text)
-                        st.markdown("---")
-                        
-                        final_html = create_a4_html(response.text)
-                        st.download_button("🖨️ Download A4 Paper (HTML/PDF)", data=final_html, file_name=f"{top2}_Paper.html", mime="text/html")
-                    except Exception as e:
-                        st.error(f"API Error: {e}")
+                        st.session_state.paper_content = response.text
+                        st.session_state.file_name = f"{top2}_Paper.html"
+                    except Exception as e: st.error(f"API Error: {e}")
+
+# ==========================================
+# --- 4. LIVE EDIT & DOWNLOAD SECTION ---
+# ==========================================
+# यह Section तभी दिखेगा जब AI पेपर बना चुका होगा!
+if st.session_state.paper_content:
+    st.markdown("---")
+    st.markdown("### ✍️ 4. Edit Your Paper & Download")
+    st.info("You can type in the box below to make any changes. Your edits will be saved in the downloaded file!")
+    
+    # Editable Text Area (Teacher can edit text here)
+    edited_paper = st.text_area("Live Editor (Markdown format):", value=st.session_state.paper_content, height=450)
+    
+    # Live Preview Section
+    with st.expander("👁️ Preview Final Paper Layout", expanded=False):
+        if inst_logo is not None:
+            col_img = st.columns([2, 1, 2])[1]
+            col_img.image(inst_logo, width=150)
+        st.markdown(edited_paper)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Final Download Button uses the EDITED text!
+    final_html = create_a4_html(edited_paper)
+    st.download_button(
+        label="🖨️ Download Final A4 Paper (HTML/PDF)", 
+        data=final_html, 
+        file_name=st.session_state.file_name, 
+        mime="text/html",
+        use_container_width=True
+    )
