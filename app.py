@@ -19,18 +19,18 @@ st.set_page_config(page_title="PaperBanao - AI Question Paper", page_icon="📝"
 # ==========================================
 # --- 🛑 SECRETS: PUT YOUR KEYS HERE ---
 # ==========================================
-SERVER_API_KEY = "ENTER_YOUR_GEMINI_API_KEY_HERE"
+SERVER_API_KEY = st.secrets["GEMINI_API_KEY"]
 
 # अपनी Supabase की डिटेल्स यहाँ डालें 👇
-SUPABASE_URL = "ENTER_YOUR_SUPABASE_PROJECT_URL_HERE"
-SUPABASE_KEY = "ENTER_YOUR_SUPABASE_ANON_KEY_HERE"
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 # ==========================================
 # --- INITIALIZE SUPABASE CLIENT ---
 # ==========================================
 @st.cache_resource
 def init_supabase():
-    if SUPABASE_URL == "ENTER_YOUR_SUPABASE_PROJECT_URL_HERE":
+    if SUPABASE_URL == "https://jwbnrviixkivbirvxara.supabase.co":
         return None
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
