@@ -42,7 +42,7 @@ def delete_paper(paper_id):
 
 # --- INITIALIZE SESSION STATE (MEMORY) ---
 if "blocks" not in st.session_state:
-    st.session_state.blocks = [] # Store individual question cards
+    st.session_state.blocks = [] 
 if "file_name" not in st.session_state:
     st.session_state.file_name = "PaperBanao_Exam"
 if "current_subject" not in st.session_state:
@@ -116,14 +116,13 @@ def extract_text_from_pdf(uploaded_file, start_page, end_page):
 
 def build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d, include_answers):
     reqs = []
-    if mcq_c > 0: reqs.append(f"- {mcq_c} Multiple Choice Questions (Diff: {mcq_d}).")
+    if mcq_c > 0: reqs.append(f"- {mcq_c} Multiple Choice Questions (Diff: {mcq_d}). Provide 4 options.")
     if fib_c > 0: reqs.append(f"- {fib_c} Fill in the Blanks (Diff: {fib_d}).")
     if tf_c > 0:  reqs.append(f"- {tf_c} True/False Questions (Diff: {tf_d}).")
     if short_c > 0: reqs.append(f"- {short_c} Short Answer Questions (Diff: {short_d}).")
     if long_c > 0:  reqs.append(f"- {long_c} Long Answer Questions (Diff: {long_d}).")
     if not reqs: return "No questions requested."
     
-    # MAGIC: Using ||| delimiter to break the paper into UI Cards
     base_prompt = "\n".join(reqs) + "\n\nCRITICAL FORMATTING RULE: You MUST separate the Main Header, EVERY SINGLE Question (with its options), and the Answer Key using exactly this delimiter: `|||` on a new line."
     
     if include_answers:
@@ -283,7 +282,6 @@ with tab_create:
                     try:
                         model = genai.GenerativeModel(working_model_name)
                         response = model.generate_content(prompt)
-                        # SPLIT THE RESPONSE INTO BLOCKS (CARDS)
                         raw_blocks = response.text.split("|||")
                         st.session_state.blocks = [{'id': str(uuid.uuid4()), 'text': b.strip()} for b in raw_blocks if b.strip()]
                     except Exception as e: st.error(f"API Error: {e}")
@@ -296,13 +294,11 @@ with tab_create:
         st.markdown("### 🧩 Question Bank Manager")
         st.success("💡 **Pro Tip:** You can edit the text inside any box below. Don't like a question? Click **Regenerate** to get a new one, or **Delete** to remove it completely!")
         
-        # Display each block as a card
         for i, block in enumerate(st.session_state.blocks):
             with st.container(border=True):
-                # Text Area for manual edits
+                # Text Area
                 st.session_state.blocks[i]['text'] = st.text_area(f"Block {i}", value=block['text'], key=f"edit_{block['id']}", height=120, label_visibility="collapsed")
                 
-                # Buttons row
                 col1, col2, col3 = st.columns([1, 1, 4])
                 with col1:
                     if st.button("🗑️ Delete", key=f"del_{block['id']}", use_container_width=True):
@@ -313,9 +309,12 @@ with tab_create:
                         with st.spinner("Generating new question..."):
                             new_text = regenerate_single_question(block['text'])
                             st.session_state.blocks[i]['text'] = new_text
+                            
+                            # 🪄 THE FIX: Force Streamlit to update this specific text box!
+                            st.session_state[f"edit_{block['id']}"] = new_text
+                            
                             st.rerun()
 
-        # Re-assemble the paper from blocks
         final_markdown_paper = "\n\n".join([b['text'] for b in st.session_state.blocks])
         
         st.markdown("---")
@@ -352,25 +351,3 @@ with tab_history:
     st.markdown("### 🗂️ Your Saved Past Papers")
     conn = sqlite3.connect('paperbanao.db')
     c = conn.cursor()
-    c.execute("SELECT * FROM papers ORDER BY id DESC")
-    saved_papers = c.fetchall()
-    conn.close()
-    
-    if not saved_papers:
-        st.warning("No papers saved yet. Generate a paper and click 'Save to Past Papers' to see it here!")
-    else:
-        for paper in saved_papers:
-            p_id, p_date, p_sub, p_board, p_content = paper
-            with st.expander(f"📄 {p_sub} | {p_board} | 🕒 {p_date}"):
-                if "<!DOCTYPE html>" in p_content:
-                    st.warning("Older paper saved in HTML format. Word Download unavailable.")
-                    st.download_button("📥 Download HTML Paper", data=p_content, file_name=f"Saved_{p_id}.html", mime="text/html", key=f"dl_old_{p_id}")
-                    if st.button("🗑️ Delete Paper", key=f"del_old_{p_id}", on_click=delete_paper, args=(p_id,)): st.rerun()
-                else:
-                    hist_html = create_a4_html(p_content, inst_name, inst_address, inst_contact)
-                    hist_word = create_word_docx(p_content, inst_name, inst_address, inst_contact)
-                    c1, c2, c3 = st.columns(3)
-                    with c1: st.download_button("🖨️ Download HTML", data=hist_html, file_name=f"History_{p_id}.html", mime="text/html", key=f"dl_h_{p_id}", use_container_width=True)
-                    with c2: st.download_button("📄 Download Word", data=hist_word, file_name=f"History_{p_id}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_w_{p_id}", use_container_width=True)
-                    with c3:
-                        if st.button("🗑️ Delete", key=f"del_{p_id}", on_click=delete_paper, args=(p_id,), use_container_width=True): st.rerun()
