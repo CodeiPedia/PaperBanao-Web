@@ -302,6 +302,9 @@ with tab_create:
                 col1, col2, col3 = st.columns([1, 1, 4])
                 with col1:
                     if st.button("🗑️ Delete", key=f"del_{block['id']}", use_container_width=True):
+                        # ✅ THE FIX FOR DELETE: Box की याददाश्त डिलीट करें
+                        if f"edit_{block['id']}" in st.session_state:
+                            del st.session_state[f"edit_{block['id']}"]
                         st.session_state.blocks.pop(i)
                         st.rerun()
                 with col2:
@@ -310,8 +313,9 @@ with tab_create:
                             new_text = regenerate_single_question(block['text'])
                             st.session_state.blocks[i]['text'] = new_text
                             
-                            # 🪄 THE FIX: Force Streamlit to update this specific text box!
-                            st.session_state[f"edit_{block['id']}"] = new_text
+                            # ✅ THE FIX FOR REGENERATE: Box की पुरानी याददाश्त डिलीट करें
+                            if f"edit_{block['id']}" in st.session_state:
+                                del st.session_state[f"edit_{block['id']}"]
                             
                             st.rerun()
 
@@ -351,3 +355,25 @@ with tab_history:
     st.markdown("### 🗂️ Your Saved Past Papers")
     conn = sqlite3.connect('paperbanao.db')
     c = conn.cursor()
+    c.execute("SELECT * FROM papers ORDER BY id DESC")
+    saved_papers = c.fetchall()
+    conn.close()
+    
+    if not saved_papers:
+        st.warning("No papers saved yet. Generate a paper and click 'Save to Past Papers' to see it here!")
+    else:
+        for paper in saved_papers:
+            p_id, p_date, p_sub, p_board, p_content = paper
+            with st.expander(f"📄 {p_sub} | {p_board} | 🕒 {p_date}"):
+                if "<!DOCTYPE html>" in p_content:
+                    st.warning("Older paper saved in HTML format. Word Download unavailable.")
+                    st.download_button("📥 Download HTML Paper", data=p_content, file_name=f"Saved_{p_id}.html", mime="text/html", key=f"dl_old_{p_id}")
+                    if st.button("🗑️ Delete Paper", key=f"del_old_{p_id}", on_click=delete_paper, args=(p_id,)): st.rerun()
+                else:
+                    hist_html = create_a4_html(p_content, inst_name, inst_address, inst_contact)
+                    hist_word = create_word_docx(p_content, inst_name, inst_address, inst_contact)
+                    c1, c2, c3 = st.columns(3)
+                    with c1: st.download_button("🖨️ Download HTML", data=hist_html, file_name=f"History_{p_id}.html", mime="text/html", key=f"dl_h_{p_id}", use_container_width=True)
+                    with c2: st.download_button("📄 Download Word", data=hist_word, file_name=f"History_{p_id}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_w_{p_id}", use_container_width=True)
+                    with c3:
+                        if st.button("🗑️ Delete", key=f"del_{p_id}", on_click=delete_paper, args=(p_id,), use_container_width=True): st.rerun()
