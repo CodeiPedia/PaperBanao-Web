@@ -124,6 +124,7 @@ if SERVER_API_KEY == "ENTER_YOUR_GEMINI_API_KEY_HERE":
     st.stop()
 else:
     genai.configure(api_key=SERVER_API_KEY)
+    working_model_name = "gemini-1.5-flash"
 
 user_data = get_user_data(st.session_state.username)
 papers_used = user_data[0]
