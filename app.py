@@ -342,7 +342,7 @@ with tab_create:
     if st.session_state.blocks:
         st.markdown("---")
         
-        # ✅ THE FIX: Question Bank Manager now hidden behind a button/expander
+        # ✅ सिर्फ Manager बटन के अंदर है
         with st.expander("🛠️ Open Question Bank Manager (Edit / Delete / Regenerate)", expanded=False):
             st.success("💡 **Pro Tip:** You can edit the text inside any box below. Don't like a question? Click **Regenerate** to get a new one, or **Delete** to remove it completely!")
             
@@ -364,15 +364,12 @@ with tab_create:
                                 if f"edit_{block['id']}" in st.session_state: del st.session_state[f"edit_{block['id']}"]
                                 st.rerun()
 
-        # Download & Preview Section is outside the expander, always visible after generation
+        # ✅ 'Finalize & Download' पूरी तरह से बाहर और हमेशा विज़िबल है
         final_markdown_paper = "\n\n".join([b['text'] for b in st.session_state.blocks])
         
         st.markdown("### 🖨️ Finalize & Download")
         
         with st.expander("👁️ Preview Final Paper Layout", expanded=False):
-            if inst_logo is not None:
-                col_img = st.columns([2, 1, 2])[1]
-                col_img.image(inst_logo, width=150)
             st.markdown(final_markdown_paper)
             
         final_html = create_a4_html(final_markdown_paper, inst_name, inst_address, inst_contact)
