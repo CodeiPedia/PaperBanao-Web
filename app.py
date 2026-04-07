@@ -154,7 +154,7 @@ st.sidebar.header("🏫 Institute Details")
 inst_logo = st.sidebar.file_uploader("Upload Institute Logo (PNG/JPG)", type=["png", "jpg", "jpeg"])
 inst_name = st.sidebar.text_input("Institute Name", value="My Success Academy")
 exam_time = st.sidebar.text_input("Exam Time", value="2 Hours")
-max_marks = st.sidebar.number_input("Maximum Marks", min_value=1, value=50)
+# 🛑 Max Marks is removed from here because it's now auto-calculated!
 
 st.sidebar.markdown("---")
 st.sidebar.header("🏢 Footer Details")
@@ -178,22 +178,21 @@ def extract_text_from_pdf(uploaded_file, start_page, end_page):
         return "".join([reader.pages[i].extract_text() + "\n" for i in range(start_index, end_index)])
     except Exception: return ""
 
-# 🛑 THE FIX: STRICTEST UNICODE MATH PROMPT 
-def build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d, include_answers):
+# ✅ Prompt update: Now tells AI to print marks next to the question!
+def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answers):
     reqs = []
-    if mcq_c > 0: reqs.append(f"- {mcq_c} Multiple Choice Questions (Diff: {mcq_d}). Provide 4 options.")
-    if fib_c > 0: reqs.append(f"- {fib_c} Fill in the Blanks (Diff: {fib_d}).")
-    if tf_c > 0:  reqs.append(f"- {tf_c} True/False Questions (Diff: {tf_d}).")
-    if short_c > 0: reqs.append(f"- {short_c} Short Answer Questions (Diff: {short_d}).")
-    if long_c > 0:  reqs.append(f"- {long_c} Long Answer Questions (Diff: {long_d}).")
+    if mcq_c > 0: reqs.append(f"- {mcq_c} Multiple Choice Questions (Diff: {mcq_d}). Provide 4 options. Write '[{mcq_m} Mark]' at the end of each question.")
+    if fib_c > 0: reqs.append(f"- {fib_c} Fill in the Blanks (Diff: {fib_d}). Write '[{fib_m} Marks]' at the end of each question.")
+    if tf_c > 0:  reqs.append(f"- {tf_c} True/False Questions (Diff: {tf_d}). Write '[{tf_m} Marks]' at the end of each question.")
+    if short_c > 0: reqs.append(f"- {short_c} Short Answer Questions (Diff: {short_d}). Write '[{short_m} Marks]' at the end of each question.")
+    if long_c > 0:  reqs.append(f"- {long_c} Long Answer Questions (Diff: {long_d}). Write '[{long_m} Marks]' at the end of each question.")
     if not reqs: return "No questions requested."
     
     base_prompt = "\n".join(reqs) + """\n\nCRITICAL FORMATTING RULES FOR ALL SUBJECTS:
 1. Separate the Main Header, EVERY SINGLE Question, and the Answer Key using exactly this delimiter: `|||` on a new line.
 2. MATH FORMATTING: YOU MUST USE ACTUAL UNICODE MATH SYMBOLS. 
    - FORBIDDEN: LaTeX ($, $$, \\frac, \\sqrt, \\theta) and spelling out symbols (theta, pi, sqrt, ^2).
-   - REQUIRED: Use real symbols: θ, π, α, β, √, ², ³, ×, ÷, ±, ≤, ≥, ≠, °. 
-   - Example: write 'sin²θ' instead of 'sin^2(theta)'. Write '√x' instead of 'sqrt(x)'. Write fractions simply as a/b or (a+b)/c.
+   - REQUIRED: Use real symbols: θ, π, α, β, √, ², ³. Write fractions as a/b.
    This is mandatory so students can read the MS Word document natively without LaTeX bugs."""
     
     if include_answers: return base_prompt + "\nPut answers at the end under heading '# Answer Key'. Separate with `|||`."
@@ -204,14 +203,10 @@ def regenerate_single_question(old_text):
     model = genai.GenerativeModel(working_model_name)
     return model.generate_content(prompt).text.strip()
 
-# 🛑 ADVANCED MATH CLEANER (Replaces English words with Math Symbols)
 def clean_math_for_word(text):
-    # Fix LaTeX fractions and brackets
     text = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'(\1)/(\2)', text)
     text = re.sub(r'\\\((.*?)\\\)', r'\1', text)
     text = re.sub(r'\\\[(.*?)\\\]', r'\1', text)
-    
-    # LaTeX to Unicode
     latex_symbols = {
         r'\times': '×', r'\div': '÷', r'\pi': 'π', r'\theta': 'θ',
         r'\leq': '≤', r'\geq': '≥', r'\neq': '≠', r'\alpha': 'α', 
@@ -220,27 +215,19 @@ def clean_math_for_word(text):
     }
     for latex, symbol in latex_symbols.items():
         text = text.replace(latex, symbol)
-        
-    # ✨ MAGIC FILTER: Words to Unicode Symbols ✨
     text = re.sub(r'\btheta\b', 'θ', text)
     text = re.sub(r'\bpi\b', 'π', text)
     text = re.sub(r'\bsqrt\b', '√', text)
     text = re.sub(r'\balpha\b', 'α', text)
     text = re.sub(r'\bbeta\b', 'β', text)
     text = re.sub(r'\bdegree\b', '°', text)
-    
-    # Fix Powers (^2 becomes ²)
     text = text.replace('^2', '²').replace('^3', '³')
-    
     return text.strip()
 
 # ✅ HTML EXPORT
 def create_a4_html(md_content, i_name, i_address, i_contact, inst_logo=None, is_2_col=False):
     md_content = md_content.replace('\r', '') 
-    
-    # HTML me bhi Magic Filter laga dete hain taaki preview me bhi sahi dikhe
     md_content = clean_math_for_word(md_content)
-    
     pb = "<div style='page-break-before: always; break-before: page; column-span: all; -webkit-column-span: all; width: 100%;'></div>\n"
     md_content = md_content.replace("# Answer Key", pb + "# Answer Key")
     md_content = md_content.replace("## Answer Key", pb + "## Answer Key")
@@ -254,17 +241,15 @@ def create_a4_html(md_content, i_name, i_address, i_contact, inst_logo=None, is_
         logo_html = f"<div style='text-align: center; margin-bottom: 10px;'><img src='data:{img_type};base64,{base64_img}' style='max-height: 80px; width: auto;'/></div>"
     
     footer_html = f"""<div class="footer" style="column-span: all;"><p><strong>{i_name}</strong> | 📍 {i_address} | 📞 {i_contact}</p></div>"""
-    
     page_padding = "10mm" if is_2_col else "20mm"
     column_style = "column-count: 2; column-gap: 10mm; font-size: 14px;" if is_2_col else "font-size: 16px;"
 
     return f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Question Paper</title><script>MathJax = {{ tex: {{ inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] }} }};</script><script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script><style>body {{ background-color: #f0f0f0; font-family: 'Times New Roman', Times, serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} .a4-page {{ background-color: white; width: 210mm; min-height: 297mm; padding: {page_padding}; box-sizing: border-box; box-shadow: 0 0 10px rgba(0,0,0,0.2); }} @media print {{ body {{ background-color: white; padding: 0; display: block; }} .a4-page {{ box-shadow: none; width: 100%; padding: {page_padding}; margin: 0; min-height: auto; }} @page {{ size: A4; margin: 0; }} }} h1, h2, h3 {{ text-align: center; color: #111; column-span: all; }} p, li {{ line-height: 1.5; color: #000; text-align: justify; word-wrap: break-word; }} hr {{ border: 1px solid #ccc; margin: 15px 0; column-span: all; }} .content-body {{ {column_style} }}</style></head><body><div class="a4-page">{logo_html}<div class="content-body">{html_body}</div>{footer_html}</div></body></html>"""
 
-# ✅ SUPER PROFESSIONAL WORD EXPORT
+# ✅ WORD EXPORT
 def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, is_2_col=False):
     doc = Document()
     md_content = md_content.replace('\r', '')
-    
     style = doc.styles['Normal']
     font = style.font
     font.name = 'Times New Roman'
@@ -311,8 +296,6 @@ def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, i
 
     for line in md_content.split('\n'):
         if line.strip() == "": continue
-        
-        # 🛑 यहाँ हमने ब्रह्मास्त्र फिल्टर लगाया है!
         line = clean_math_for_word(line)
         
         if "Answer Key" in line or "ANSWER KEY" in line:
@@ -327,7 +310,6 @@ def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, i
         else:
             p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY 
-            
             parts = re.split(r'\*\*(.*?)\*\*', line)
             for i, part in enumerate(parts):
                 if i % 2 == 1: p.add_run(part).bold = True
@@ -338,7 +320,6 @@ def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, i
         footer_para = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
         footer_para.text = f"📍 {i_address}  |  📞 {i_contact}  |  Generated securely by PaperBanao AI"
         footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
         for run in footer_para.runs:
             run.font.name = 'Times New Roman'
             run.font.size = Pt(10)
@@ -378,38 +359,55 @@ with tab_create:
         with c4: top2 = st.text_input("Specific Topic")
 
     st.markdown("---")
-    st.markdown("### 2. Set Questions & Difficulty")
+    st.markdown("### 2. Set Questions, Marks & Difficulty")
     diff_options = ["Easy", "Medium", "Hard", "Mixed"]
     
-    c1, c2, c3 = st.columns([2, 1, 2])
+    # 🌟 NEW LAYOUT: 4 Columns (Label, Count, Marks/Q, Difficulty)
+    h1, h2, h3, h4 = st.columns([3, 2, 2, 3])
+    with h1: st.markdown("**Question Type**")
+    with h2: st.markdown("**Count**")
+    with h3: st.markdown("**Marks / Q**")
+    with h4: st.markdown("**Difficulty**")
+
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     with c1: st.markdown("<div style='padding-top: 10px;'>Multiple Choice (MCQs)</div>", unsafe_allow_html=True)
     with c2: mcq_c = st.number_input("MCQ count", min_value=0, max_value=50, value=5, label_visibility="collapsed", key="m_c")
-    with c3: mcq_d = st.selectbox("MCQ Diff", diff_options, label_visibility="collapsed", key="m_d")
+    with c3: mcq_m = st.number_input("MCQ mark", min_value=1, value=1, label_visibility="collapsed", key="m_m")
+    with c4: mcq_d = st.selectbox("MCQ Diff", diff_options, label_visibility="collapsed", key="m_d")
 
-    c1, c2, c3 = st.columns([2, 1, 2])
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     with c1: st.markdown("<div style='padding-top: 10px;'>Fill in the Blanks</div>", unsafe_allow_html=True)
     with c2: fib_c = st.number_input("FIB count", min_value=0, max_value=20, value=3, label_visibility="collapsed", key="f_c")
-    with c3: fib_d = st.selectbox("FIB Diff", diff_options, label_visibility="collapsed", key="f_d")
+    with c3: fib_m = st.number_input("FIB mark", min_value=1, value=1, label_visibility="collapsed", key="f_m")
+    with c4: fib_d = st.selectbox("FIB Diff", diff_options, label_visibility="collapsed", key="f_d")
 
-    c1, c2, c3 = st.columns([2, 1, 2])
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     with c1: st.markdown("<div style='padding-top: 10px;'>True / False</div>", unsafe_allow_html=True)
     with c2: tf_c = st.number_input("TF count", min_value=0, max_value=20, value=3, label_visibility="collapsed", key="t_c")
-    with c3: tf_d = st.selectbox("TF Diff", diff_options, label_visibility="collapsed", key="t_d")
+    with c3: tf_m = st.number_input("TF mark", min_value=1, value=1, label_visibility="collapsed", key="t_m")
+    with c4: tf_d = st.selectbox("TF Diff", diff_options, label_visibility="collapsed", key="t_d")
 
-    c1, c2, c3 = st.columns([2, 1, 2])
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     with c1: st.markdown("<div style='padding-top: 10px;'>Short Answer</div>", unsafe_allow_html=True)
     with c2: short_c = st.number_input("Short count", min_value=0, max_value=20, value=3, label_visibility="collapsed", key="s_c")
-    with c3: short_d = st.selectbox("Short Diff", diff_options, label_visibility="collapsed", key="s_d")
+    with c3: short_m = st.number_input("Short mark", min_value=1, value=2, label_visibility="collapsed", key="s_m")
+    with c4: short_d = st.selectbox("Short Diff", diff_options, label_visibility="collapsed", key="s_d")
 
-    c1, c2, c3 = st.columns([2, 1, 2])
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     with c1: st.markdown("<div style='padding-top: 10px;'>Long Answer</div>", unsafe_allow_html=True)
     with c2: long_c = st.number_input("Long count", min_value=0, max_value=20, value=2, label_visibility="collapsed", key="l_c")
-    with c3: long_d = st.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d")
+    with c3: long_m = st.number_input("Long mark", min_value=1, value=5, label_visibility="collapsed", key="l_m")
+    with c4: long_d = st.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d")
+
+    # 🌟 DYNAMIC MARKS CALCULATOR
+    total_q = mcq_c + fib_c + tf_c + short_c + long_c
+    calc_max_marks = (mcq_c * mcq_m) + (fib_c * fib_m) + (tf_c * tf_m) + (short_c * short_m) + (long_c * long_m)
 
     st.markdown("---")
+    st.markdown(f"<h4 style='text-align: right; color: #E91E63;'>📊 Total Questions: {total_q} &nbsp;|&nbsp; 🏆 Maximum Marks: {calc_max_marks}</h4>", unsafe_allow_html=True)
+    st.markdown("---")
+
     if st.button("🚀 Generate Exam Paper", use_container_width=True):
-        total_q = mcq_c + fib_c + tf_c + short_c + long_c
-        
         if total_q > 100:
             st.error("🚨 Quality Alert: To maintain AI quality, you can only generate up to 100 total questions at a time.")
             st.stop()
@@ -417,19 +415,21 @@ with tab_create:
             st.warning("⚠️ Please select at least 1 question to generate.")
             st.stop()
 
-        q_reqs = build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d, include_answer_key)
+        # 🛑 Now passing the Marks to the Prompt function!
+        q_reqs = build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answer_key)
         board_rules = f"Structure the paper matching {board_format} patterns."
         lang_rules = f"Generate paper in {paper_language}."
         prompt = ""
         
+        # 🛑 Using calculated `calc_max_marks` in Header!
         if "Syllabus" in source_choice and sub1 and syl1:
-            header = f"# {inst_name}\n**Class:** {grade1} | **Subject:** {sub1} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"
+            header = f"# {inst_name}\n**Class:** {grade1} | **Subject:** {sub1} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {calc_max_marks} | **Total Questions:** {total_q}\n***"
             prompt = f"Create exam strictly covering: {syl1}\n{board_rules}\n{lang_rules}\nMUST START EXACTLY WITH HEADER:\n{header}\nQuestions:\n{q_reqs}"
             st.session_state.file_name = f"{sub1}_Paper"
             st.session_state.current_subject = f"{sub1} (Class: {grade1})"
         elif "Deep Extract" in source_choice and up_pdf and sub2 and top2:
             document_text = extract_text_from_pdf(up_pdf, start_p, end_p)
-            header = f"# {inst_name}\n**Subject:** {sub2} | **Topic:** {top2} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"
+            header = f"# {inst_name}\n**Subject:** {sub2} | **Topic:** {top2} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {calc_max_marks} | **Total Questions:** {total_q}\n***"
             prompt = f"Create exam ONLY for requested topic using text below.\n- Topic: {top2}\n{board_rules}\n{lang_rules}\nMUST START EXACTLY WITH HEADER:\n{header}\nQuestions:\n{q_reqs}\nText:\n---\n{document_text}\n---"
             st.session_state.file_name = f"{top2}_Paper"
             st.session_state.current_subject = f"{sub2} - {top2}"
