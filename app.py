@@ -463,4 +463,10 @@ with tab_history:
             with st.expander(f"📄 {p['subject']} | {p['board']} | 🕒 {p['date']}"):
                 
                 h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact, inst_logo, is_two_column)
-                h_word = create_word_docx(p['content'], inst_name, inst_address, inst_contact,
+                h_word = create_word_docx(p['content'], inst_name, inst_address, inst_contact, inst_logo, is_two_column)
+                
+                c1, c2, c3 = st.columns(3)
+                with c1: st.download_button("🖨️ Download HTML", data=h_html, file_name=f"History_{p['id']}.html", mime="text/html", key=f"dl_h_{p['id']}", use_container_width=True)
+                with c2: st.download_button("📄 Download Word", data=h_word, file_name=f"History_{p['id']}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_w_{p['id']}", use_container_width=True)
+                with c3: 
+                    if st.button("🗑️ Delete", key=f"del_{p['id']}", on_click=delete_paper, args=(p['id'],), use_container_width=True): st.rerun()
