@@ -178,7 +178,7 @@ def extract_text_from_pdf(uploaded_file, start_page, end_page):
         return "".join([reader.pages[i].extract_text() + "\n" for i in range(start_index, end_index)])
     except Exception: return ""
 
-# 🛑 THE FIX: STRICTEST POSSIBLE MATH PROMPT FOR ALL SUBJECTS
+# 🛑 THE FIX: STRICTEST UNICODE MATH PROMPT 
 def build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d, include_answers):
     reqs = []
     if mcq_c > 0: reqs.append(f"- {mcq_c} Multiple Choice Questions (Diff: {mcq_d}). Provide 4 options.")
@@ -190,37 +190,57 @@ def build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short
     
     base_prompt = "\n".join(reqs) + """\n\nCRITICAL FORMATTING RULES FOR ALL SUBJECTS:
 1. Separate the Main Header, EVERY SINGLE Question, and the Answer Key using exactly this delimiter: `|||` on a new line.
-2. ABSOLUTELY NO LATEX OR MATHJAX: You must write all math, physics, and chemistry formulas in simple plain readable text.
-   - FORBIDDEN: $, $$, \\frac, \\times, \\(, \\), \\sqrt, \\[, \\]
-   - REQUIRED: Use standard keyboard characters ONLY. Example: Use 'x' or '*' for multiply. Use '/' for fractions like (a+b)/c. Use '^' for powers like x^2. Use 'sqrt(x)' for square roots.
-   This is mandatory so students can easily read the MS Word document without confusing symbols."""
+2. MATH FORMATTING: YOU MUST USE ACTUAL UNICODE MATH SYMBOLS. 
+   - FORBIDDEN: LaTeX ($, $$, \\frac, \\sqrt, \\theta) and spelling out symbols (theta, pi, sqrt, ^2).
+   - REQUIRED: Use real symbols: θ, π, α, β, √, ², ³, ×, ÷, ±, ≤, ≥, ≠, °. 
+   - Example: write 'sin²θ' instead of 'sin^2(theta)'. Write '√x' instead of 'sqrt(x)'. Write fractions simply as a/b or (a+b)/c.
+   This is mandatory so students can read the MS Word document natively without LaTeX bugs."""
     
     if include_answers: return base_prompt + "\nPut answers at the end under heading '# Answer Key'. Separate with `|||`."
     else: return base_prompt + "\nDO NOT provide answers. Provide ONLY the questions."
 
 def regenerate_single_question(old_text):
-    prompt = f"You are an expert exam creator. Generate a NEW question to replace this old one:\n{old_text}\nProvide ONLY the new question text. DO NOT use any LaTeX math symbols. Write fractions as a/b."
+    prompt = f"You are an expert exam creator. Generate a NEW question to replace this old one:\n{old_text}\nProvide ONLY the new question text. Use real Unicode symbols (θ, π, √, ², ³) instead of words or LaTeX."
     model = genai.GenerativeModel(working_model_name)
     return model.generate_content(prompt).text.strip()
 
-# 🛑 BRAHMASTRA MATH CLEANER (Just in case AI makes a mistake)
+# 🛑 ADVANCED MATH CLEANER (Replaces English words with Math Symbols)
 def clean_math_for_word(text):
+    # Fix LaTeX fractions and brackets
     text = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'(\1)/(\2)', text)
     text = re.sub(r'\\\((.*?)\\\)', r'\1', text)
     text = re.sub(r'\\\[(.*?)\\\]', r'\1', text)
-    math_symbols = {
+    
+    # LaTeX to Unicode
+    latex_symbols = {
         r'\times': '×', r'\div': '÷', r'\pi': 'π', r'\theta': 'θ',
-        r'\leq': '≤', r'\geq': '≥', r'\neq': '≠', r'^2': '²', r'^3': '³',
-        r'\alpha': 'α', r'\beta': 'β', r'\pm': '±', r'\circ': '°', r'\sqrt': '√'
+        r'\leq': '≤', r'\geq': '≥', r'\neq': '≠', r'\alpha': 'α', 
+        r'\beta': 'β', r'\pm': '±', r'\circ': '°', r'\sqrt': '√',
+        '$$': '', '$': ''
     }
-    for latex, symbol in math_symbols.items():
+    for latex, symbol in latex_symbols.items():
         text = text.replace(latex, symbol)
-    text = text.replace('$$', '').replace('$', '')
+        
+    # ✨ MAGIC FILTER: Words to Unicode Symbols ✨
+    text = re.sub(r'\btheta\b', 'θ', text)
+    text = re.sub(r'\bpi\b', 'π', text)
+    text = re.sub(r'\bsqrt\b', '√', text)
+    text = re.sub(r'\balpha\b', 'α', text)
+    text = re.sub(r'\bbeta\b', 'β', text)
+    text = re.sub(r'\bdegree\b', '°', text)
+    
+    # Fix Powers (^2 becomes ²)
+    text = text.replace('^2', '²').replace('^3', '³')
+    
     return text.strip()
 
 # ✅ HTML EXPORT
 def create_a4_html(md_content, i_name, i_address, i_contact, inst_logo=None, is_2_col=False):
     md_content = md_content.replace('\r', '') 
+    
+    # HTML me bhi Magic Filter laga dete hain taaki preview me bhi sahi dikhe
+    md_content = clean_math_for_word(md_content)
+    
     pb = "<div style='page-break-before: always; break-before: page; column-span: all; -webkit-column-span: all; width: 100%;'></div>\n"
     md_content = md_content.replace("# Answer Key", pb + "# Answer Key")
     md_content = md_content.replace("## Answer Key", pb + "## Answer Key")
@@ -292,6 +312,7 @@ def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, i
     for line in md_content.split('\n'):
         if line.strip() == "": continue
         
+        # 🛑 यहाँ हमने ब्रह्मास्त्र फिल्टर लगाया है!
         line = clean_math_for_word(line)
         
         if "Answer Key" in line or "ANSWER KEY" in line:
