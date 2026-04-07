@@ -194,9 +194,8 @@ def regenerate_single_question(old_text):
     model = genai.GenerativeModel(working_model_name)
     return model.generate_content(prompt).text.strip()
 
-# ✅ WORD EXPORT के लिए नया Math Cleaner Function
+# ✅ WORD EXPORT के लिए Math Cleaner Function
 def clean_math_for_word(text):
-    # कॉमन LaTeX मैथ कोडिंग को नॉर्मल निशानों (Unicode) में बदलना
     math_symbols = {
         r'\times': '×', r'\div': '÷', r'\pi': 'π', r'\theta': 'θ',
         r'\leq': '≤', r'\geq': '≥', r'\neq': '≠', r'^2': '²', r'^3': '³',
@@ -204,17 +203,12 @@ def clean_math_for_word(text):
     }
     for latex, symbol in math_symbols.items():
         text = text.replace(latex, symbol)
-    
-    # $ और $$ निशानों को डिलीट करना
     text = text.replace('$$', '').replace('$', '')
     return text
 
 # ✅ UPDATED HTML EXPORT
 def create_a4_html(md_content, i_name, i_address, i_contact, inst_logo=None, is_2_col=False):
-    # 🛑 FIX 1: Remove hidden characters that cause issues
     md_content = md_content.replace('\r', '') 
-    
-    # 🛑 FIX 2: Stronger Page Break for Answer Key
     pb = "<div style='page-break-before: always; break-before: page; column-span: all; -webkit-column-span: all; width: 100%;'></div>\n"
     md_content = md_content.replace("# Answer Key", pb + "# Answer Key")
     md_content = md_content.replace("## Answer Key", pb + "## Answer Key")
@@ -237,8 +231,6 @@ def create_a4_html(md_content, i_name, i_address, i_contact, inst_logo=None, is_
 # ✅ UPDATED WORD EXPORT
 def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, is_2_col=False):
     doc = Document()
-    
-    # 🛑 FIX 3: Remove hidden '\r' characters to STOP small boxes in MS Word
     md_content = md_content.replace('\r', '')
     
     if is_2_col:
@@ -266,10 +258,8 @@ def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, i
     for line in md_content.split('\n'):
         if line.strip() == "": continue
         
-        # 🛑 FIX 5: Math Cleaner Function Added Here
         line = clean_math_for_word(line)
         
-        # 🛑 FIX 4: Stronger Answer Key Check for Word
         if "Answer Key" in line or "ANSWER KEY" in line:
             doc.add_page_break() 
             doc.add_heading("Answer Key", level=1)
@@ -324,11 +314,13 @@ with tab_create:
     st.markdown("### 2. Set Questions & Difficulty")
     diff_options = ["Easy", "Medium", "Hard", "Mixed"]
     
+    # ✅ FIX: MCQ Max limit is now 50
     c1, c2, c3 = st.columns([2, 1, 2])
     with c1: st.markdown("<div style='padding-top: 10px;'>Multiple Choice (MCQs)</div>", unsafe_allow_html=True)
-    with c2: mcq_c = st.number_input("MCQ count", min_value=0, max_value=20, value=5, label_visibility="collapsed", key="m_c")
+    with c2: mcq_c = st.number_input("MCQ count", min_value=0, max_value=50, value=5, label_visibility="collapsed", key="m_c")
     with c3: mcq_d = st.selectbox("MCQ Diff", diff_options, label_visibility="collapsed", key="m_d")
 
+    # ✅ FIX: All other questions max limit is 20
     c1, c2, c3 = st.columns([2, 1, 2])
     with c1: st.markdown("<div style='padding-top: 10px;'>Fill in the Blanks</div>", unsafe_allow_html=True)
     with c2: fib_c = st.number_input("FIB count", min_value=0, max_value=20, value=3, label_visibility="collapsed", key="f_c")
@@ -353,8 +345,9 @@ with tab_create:
     if st.button("🚀 Generate Exam Paper", use_container_width=True):
         total_q = mcq_c + fib_c + tf_c + short_c + long_c
         
-        if total_q > 50:
-            st.error("🚨 Quality Alert: You can only generate up to 50 questions at a time.")
+        # ✅ FIX: Hard Limit increased to 100 to allow 50 MCQs + other questions
+        if total_q > 100:
+            st.error("🚨 Quality Alert: To maintain AI quality, you can only generate up to 100 total questions at a time.")
             st.stop()
         elif total_q == 0:
             st.warning("⚠️ Please select at least 1 question to generate.")
