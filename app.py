@@ -10,6 +10,7 @@ import hashlib
 import base64
 from docx import Document
 from docx.shared import Inches
+from docx.oxml.ns import qn  # <--- NEW IMPORT FOR 2-COLUMN WORD
 from io import BytesIO
 
 # --- SUPABASE ---
@@ -149,7 +150,6 @@ else:
 
 st.sidebar.markdown("---")
 st.sidebar.header("🏫 Institute Details")
-# ✅ LOGO UPLOAD FEATURE IS HERE
 inst_logo = st.sidebar.file_uploader("Upload Institute Logo (PNG/JPG)", type=["png", "jpg", "jpeg"])
 inst_name = st.sidebar.text_input("Institute Name", value="My Success Academy")
 exam_time = st.sidebar.text_input("Exam Time", value="2 Hours")
@@ -161,10 +161,14 @@ inst_address = st.sidebar.text_input("Institute Address", value="123 Education L
 inst_contact = st.sidebar.text_input("Contact Number", value="+91 9876543210")
 
 st.sidebar.markdown("---")
-st.sidebar.header("📜 Formatting")
+st.sidebar.header("📜 Formatting & Layout")
 board_format = st.sidebar.selectbox("Board Pattern", ["Standard", "BSEB (Bihar Board)", "CBSE", "ICSE"])
 paper_language = st.sidebar.selectbox("Paper Language", ["English", "Hindi", "Bilingual"])
 include_answer_key = st.sidebar.toggle("Include Answer Key", value=True)
+
+# ✅ NEW TOGGLE FOR 2-COLUMN FORMAT
+is_two_column = st.sidebar.toggle("📄 Two-Column Format (Save Paper)", value=False)
+
 
 # --- Helper Functions ---
 def extract_text_from_pdf(uploaded_file, start_page, end_page):
@@ -192,8 +196,8 @@ def regenerate_single_question(old_text):
     model = genai.GenerativeModel(working_model_name)
     return model.generate_content(prompt).text.strip()
 
-# ✅ UPDATED HTML & WORD EXPORT WITH LOGO
-def create_a4_html(md_content, i_name, i_address, i_contact, inst_logo=None):
+# ✅ UPDATED HTML EXPORT (Supports 2-Column & Small Margins)
+def create_a4_html(md_content, i_name, i_address, i_contact, inst_logo=None, is_2_col=False):
     md_content = md_content.replace("# Answer Key", "<div style='page-break-before: always;'></div>\n# Answer Key")
     html_body = markdown.markdown(md_content)
     logo_html = ""
@@ -201,22 +205,48 @@ def create_a4_html(md_content, i_name, i_address, i_contact, inst_logo=None):
         base64_img = base64.b64encode(inst_logo.getvalue()).decode()
         img_type = inst_logo.type
         logo_html = f"<div style='text-align: center; margin-bottom: 10px;'><img src='data:{img_type};base64,{base64_img}' style='max-height: 80px; width: auto;'/></div>"
-    footer_html = f"""<div class="footer"><p><strong>{i_name}</strong> | 📍 {i_address} | 📞 {i_contact}</p></div>"""
-    return f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Question Paper</title><script>MathJax = {{ tex: {{ inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] }} }};</script><script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script><style>body {{ background-color: #f0f0f0; font-family: 'Times New Roman', Times, serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} .a4-page {{ background-color: white; width: 210mm; min-height: 297mm; padding: 20mm; box-sizing: border-box; box-shadow: 0 0 10px rgba(0,0,0,0.2); }} @media print {{ body {{ background-color: white; padding: 0; display: block; }} .a4-page {{ box-shadow: none; width: 100%; padding: 0; margin: 0; min-height: auto; }} @page {{ size: A4; margin: 20mm; }} }} h1, h2, h3 {{ text-align: center; color: #111; }} p, li {{ font-size: 16px; line-height: 1.5; color: #000; }} hr {{ border: 1px solid #ccc; margin: 20px 0; }} .footer {{ margin-top: 50px; padding-top: 15px; border-top: 2px dashed #bbb; text-align: center; font-size: 14px; color: #444; page-break-inside: avoid; }}</style></head><body><div class="a4-page">{logo_html}{html_body}{footer_html}</div></body></html>"""
+    
+    footer_html = f"""<div class="footer" style="column-span: all;"><p><strong>{i_name}</strong> | 📍 {i_address} | 📞 {i_contact}</p></div>"""
+    
+    # CSS LOGIC FOR MARGINS AND COLUMNS
+    page_padding = "10mm" if is_2_col else "20mm" # Minimum margin if 2-col
+    column_style = "column-count: 2; column-gap: 10mm; font-size: 14px;" if is_2_col else "font-size: 16px;"
 
-def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None):
+    return f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Question Paper</title><script>MathJax = {{ tex: {{ inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] }} }};</script><script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script><style>body {{ background-color: #f0f0f0; font-family: 'Times New Roman', Times, serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} .a4-page {{ background-color: white; width: 210mm; min-height: 297mm; padding: {page_padding}; box-sizing: border-box; box-shadow: 0 0 10px rgba(0,0,0,0.2); }} @media print {{ body {{ background-color: white; padding: 0; display: block; }} .a4-page {{ box-shadow: none; width: 100%; padding: {page_padding}; margin: 0; min-height: auto; }} @page {{ size: A4; margin: 0; }} }} h1, h2, h3 {{ text-align: center; color: #111; column-span: all; }} p, li {{ line-height: 1.5; color: #000; }} hr {{ border: 1px solid #ccc; margin: 15px 0; column-span: all; }} .footer {{ margin-top: 30px; padding-top: 10px; border-top: 2px dashed #bbb; text-align: center; font-size: 12px; color: #444; page-break-inside: avoid; column-span: all; }} .content-body {{ {column_style} }}</style></head><body><div class="a4-page">{logo_html}<div class="content-body">{html_body}</div>{footer_html}</div></body></html>"""
+
+# ✅ UPDATED WORD EXPORT (Supports 2-Column & Small Margins via XML)
+def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, is_2_col=False):
     doc = Document()
+    
+    # SET MINIMUM MARGINS (0.4 Inches) FOR ALL SECTIONS
+    if is_2_col:
+        for section in doc.sections:
+            section.top_margin = Inches(0.4)
+            section.bottom_margin = Inches(0.4)
+            section.left_margin = Inches(0.4)
+            section.right_margin = Inches(0.4)
+
+    # Logo & Header (Always Single Column / Centered)
     if inst_logo is not None:
         try:
-            doc.add_picture(inst_logo, height=Inches(1.0))
+            doc.add_picture(inst_logo, height=Inches(0.8))
             doc.paragraphs[-1].alignment = 1 
         except Exception: pass
     header = doc.add_heading(i_name, level=0)
     header.alignment = 1 
+
+    # ENABLE 2-COLUMN FOR QUESTIONS
+    if is_2_col:
+        new_section = doc.add_section(0) # 0 = Continuous Section Break
+        sectPr = new_section._sectPr
+        cols = sectPr.xpath('./w:cols')[0]
+        cols.set(qn('w:num'), '2')
+        cols.set(qn('w:space'), '360') # 0.25 Inch gap between columns
+
     for line in md_content.split('\n'):
         if line.strip() == "": continue
         if "# Answer Key" in line:
-            doc.add_page_break()
+            doc.add_page_break() # Answer Key starts on fresh page
             doc.add_heading("Answer Key", level=1)
             continue
         if line.startswith('# '): doc.add_heading(line.replace('# ', ''), level=1)
@@ -227,6 +257,7 @@ def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None):
             for i, part in enumerate(parts):
                 if i % 2 == 1: p.add_run(part).bold = True
                 else: p.add_run(part)
+                
     doc.add_paragraph("\n")
     footer = doc.add_paragraph(f"📍 {i_address} | 📞 {i_contact}\nGenerated securely by PaperBanao AI")
     footer.alignment = 1
@@ -267,7 +298,6 @@ with tab_create:
     st.markdown("### 2. Set Questions & Difficulty")
     diff_options = ["Easy", "Medium", "Hard", "Mixed"]
     
-    # ✅ LIMIT APPLIED (max_value=20)
     c1, c2, c3 = st.columns([2, 1, 2])
     with c1: st.markdown("<div style='padding-top: 10px;'>Multiple Choice (MCQs)</div>", unsafe_allow_html=True)
     with c2: mcq_c = st.number_input("MCQ count", min_value=0, max_value=20, value=5, label_visibility="collapsed", key="m_c")
@@ -297,7 +327,6 @@ with tab_create:
     if st.button("🚀 Generate Exam Paper", use_container_width=True):
         total_q = mcq_c + fib_c + tf_c + short_c + long_c
         
-        # ✅ HARD LIMIT BLOCKER (Max 50 Questions)
         if total_q > 50:
             st.error("🚨 Quality Alert: You can only generate up to 50 questions at a time.")
             st.stop()
@@ -358,8 +387,9 @@ with tab_create:
                 st.columns([2, 1, 2])[1].image(inst_logo, width=150)
             st.markdown(final_markdown_paper)
             
-        final_html = create_a4_html(final_markdown_paper, inst_name, inst_address, inst_contact, inst_logo)
-        final_word = create_word_docx(final_markdown_paper, inst_name, inst_address, inst_contact, inst_logo)
+        # ✅ PASS is_two_column FLAG TO EXPORT FUNCTIONS
+        final_html = create_a4_html(final_markdown_paper, inst_name, inst_address, inst_contact, inst_logo, is_two_column)
+        final_word = create_word_docx(final_markdown_paper, inst_name, inst_address, inst_contact, inst_logo, is_two_column)
         
         c1, c2, c3 = st.columns(3)
         with c1: st.download_button("🖨️ Download HTML", data=final_html, file_name=st.session_state.file_name + ".html", mime="text/html", use_container_width=True)
@@ -377,8 +407,11 @@ with tab_history:
     else:
         for p in res.data:
             with st.expander(f"📄 {p['subject']} | {p['board']} | 🕒 {p['date']}"):
-                h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact)
-                h_word = create_word_docx(p['content'], inst_name, inst_address, inst_contact)
+                
+                # ✅ PASS is_two_column FLAG FOR HISTORY DOWNLOADS TOO
+                h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact, inst_logo, is_two_column)
+                h_word = create_word_docx(p['content'], inst_name, inst_address, inst_contact, inst_logo, is_two_column)
+                
                 c1, c2, c3 = st.columns(3)
                 with c1: st.download_button("🖨️ Download HTML", data=h_html, file_name=f"History_{p['id']}.html", mime="text/html", key=f"dl_h_{p['id']}", use_container_width=True)
                 with c2: st.download_button("📄 Download Word", data=h_word, file_name=f"History_{p['id']}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_w_{p['id']}", use_container_width=True)
