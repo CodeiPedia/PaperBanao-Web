@@ -176,27 +176,32 @@ def extract_text_from_pdf(uploaded_file, start_page, end_page):
         return "".join([reader.pages[i].extract_text() + "\n" for i in range(start_index, end_index)])
     except Exception: return ""
 
-# 🛑 UPDATED PROMPT: STRICT SIMPLE HINDI & UNICODE SYMBOLS
+# 🛑 THE FIX: STRICT SIMPLE HINDI & UNICODE SYMBOLS
 def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answers):
     reqs = []
-    if mcq_c > 0: reqs.append(f"- {mcq_c} MCQ Questions ({mcq_d}). [{mcq_m} Mark each]")
-    if fib_c > 0: reqs.append(f"- {fib_c} FIB Questions ({fib_d}). [{fib_m} Marks each]")
-    if tf_c > 0:  reqs.append(f"- {tf_c} True/False Questions ({tf_d}). [{tf_m} Marks each]")
-    if short_c > 0: reqs.append(f"- {short_c} Short Questions ({short_d}). [{short_m} Marks each]")
-    if long_c > 0:  reqs.append(f"- {long_c} Long Questions ({long_d}). [{long_m} Marks each]")
+    if mcq_c > 0: reqs.append(f"- {mcq_c} Multiple Choice Questions (Diff: {mcq_d}). Provide 4 options. Write '[{mcq_m} Mark]' at the end of each question.")
+    if fib_c > 0: reqs.append(f"- {fib_c} Fill in the Blanks (Diff: {fib_d}). Write '[{fib_m} Marks]' at the end of each question.")
+    if tf_c > 0:  reqs.append(f"- {tf_c} True/False Questions (Diff: {tf_d}). Write '[{tf_m} Marks]' at the end of each question.")
+    if short_c > 0: reqs.append(f"- {short_c} Short Answer Questions (Diff: {short_d}). Write '[{short_m} Marks]' at the end of each question.")
+    if long_c > 0:  reqs.append(f"- {long_c} Long Answer Questions (Diff: {long_d}). Write '[{long_m} Marks]' at the end of each question.")
+    if not reqs: return "No questions requested."
     
     lang_instruction = """
-    LANGUAGE RULE: Use extremely simple, easy-to-understand Hindi (Hinglish mix is encouraged). 
-    DO NOT use difficult or high-level academic Hindi words. 
-    Always provide common English terms in brackets for any technical words. 
-    Example: Use 'अभाज्य संख्या (Prime Number)', 'अंश (Numerator)', 'हर (Denominator)', 'ब्याज (Interest)', 'वर्गमूल (Square Root)'.
-    Tone should be simple, like a local teacher explaining to students in a village.
+    LANGUAGE RULE: If the user selected Hindi or Bilingual, use extremely simple, easy-to-understand Hindi (Hinglish mix is encouraged). 
+    DO NOT use difficult academic Hindi words. Always provide English terms in brackets for any technical or mathematical words. 
+    Example: 'अभाज्य संख्या (Prime Number)', 'अंश (Numerator)', 'हर (Denominator)', 'वर्गमूल (Square Root)'.
+    Tone should be like a helpful local teacher explaining to students in a simple way.
     """
     
-    base_prompt = "\n".join(reqs) + f"\n\n{lang_instruction}\n\nCRITICAL: Use `|||` delimiter between every block. Use actual Unicode symbols for Math (θ, π, √, ², ³) instead of LaTeX or words."
+    base_prompt = "\n".join(reqs) + f"\n\n{lang_instruction}\n\nCRITICAL FORMATTING:\n1. Separate every block with `|||` on a new line.\n2. MATH: Use actual Unicode symbols (θ, π, √, ², ³) instead of LaTeX or words."
     
-    if include_answers: return base_prompt + "\nAdd Answer Key at the end under heading '# Answer Key' separated by `|||`."
-    return base_prompt
+    if include_answers: return base_prompt + "\nPut answers at the end under heading '# Answer Key'. Separate with `|||`. Answers must also be in simple language."
+    else: return base_prompt + "\nDO NOT provide answers."
+
+def regenerate_single_question(old_text):
+    prompt = f"Regenerate this question in extremely simple language. Use Unicode symbols (θ, π, √, ², ³) instead of LaTeX. If Hindi, use Hinglish mix and brackets for technical terms:\n{old_text}"
+    model = genai.GenerativeModel(working_model_name)
+    return model.generate_content(prompt).text.strip()
 
 def clean_math_for_word(text):
     text = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'(\1)/(\2)', text)
@@ -207,7 +212,7 @@ def clean_math_for_word(text):
         text = text.replace(latex, symbol)
     return text.strip()
 
-# --- EXPORT FUNCTIONS ---
+# ✅ HTML EXPORT (With Fixed Footer)
 def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
     md_content = md_content.replace('\r', '') 
     md_content = clean_math_for_word(md_content)
@@ -220,37 +225,77 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     if inst_logo is not None:
         inst_logo.seek(0)
         base64_img = base64.b64encode(inst_logo.getvalue()).decode()
-        logo_html_top = f"<div style='text-align: center; margin-bottom: 10px;'><img src='data:{inst_logo.type};base64,{base64_img}' style='max-height: 80px;'/></div>"
-        logo_html_footer = f"<img src='data:{inst_logo.type};base64,{base64_img}' style='height: 18px; vertical-align: middle; margin-right: 8px;'/>"
+        img_type = inst_logo.type
+        logo_html_top = f"<div style='text-align: center; margin-bottom: 10px;'><img src='data:{img_type};base64,{base64_img}' style='max-height: 80px;'/></div>"
+        logo_html_footer = f"<img src='data:{img_type};base64,{base64_img}' style='height: 18px; vertical-align: middle; margin-right: 8px;'/>"
     
-    footer_html = f'<div class="footer-container"><div class="footer"><p>{logo_html_footer}<strong>{i_name}</strong> | 📍 {i_address} | 👨‍🏫 <strong>{t_name}</strong></p></div></div>'
+    footer_html = f'<div class="footer-container"><div class="footer"><p>{logo_html_footer}<strong>{i_name}</strong> | 📍 {i_address} | 📞 {i_contact} | 👨‍🏫 <strong>{t_name}</strong></p></div></div>'
     padding = "10mm" if is_2_col else "20mm"
-    col_style = f"column-count: 2; column-gap: 10mm; font-size: 14px;" if is_2_col else "font-size: 16px;"
+    col_style = "column-count: 2; column-gap: 10mm; font-size: 14px;" if is_2_col else "font-size: 16px;"
 
-    return f"""<!DOCTYPE html><html><head><style>
-    body {{ background: #f0f0f0; font-family: 'Times New Roman'; padding: 20px; display: flex; justify-content: center; }} 
-    .a4-page {{ background: white; width: 210mm; min-height: 297mm; padding: {padding}; box-shadow: 0 0 10px rgba(0,0,0,0.1); position: relative; padding-bottom: 25mm; }} 
-    @media print {{ body {{ background: white; padding: 0; }} .a4-page {{ box-shadow: none; width: 100%; margin: 0; padding-bottom: 20mm; }} .footer-container {{ position: fixed; bottom: 0; width: 100%; background: white; }} }} 
-    .content-body {{ {col_style} }} .footer-container {{ text-align: center; margin-top: 20px; }} .footer {{ border-top: 1px dashed #ccc; padding-top: 10px; font-size: 12px; display: inline-block; width: 90%; }}
-    h1, h2, h3 {{ text-align: center; column-span: all; }} p {{ text-align: justify; line-height: 1.5; }}
+    return f"""<!DOCTYPE html><html lang="en"><head><style>
+    body {{ background: #f0f0f0; font-family: 'Times New Roman', serif; padding: 20px; display: flex; justify-content: center; }} 
+    .a4-page {{ background: white; width: 210mm; min-height: 297mm; padding: {padding}; box-shadow: 0 0 10px rgba(0,0,0,0.2); position: relative; padding-bottom: 25mm; }} 
+    @media print {{ 
+        body {{ background: white; padding: 0; display: block; }} 
+        .a4-page {{ box-shadow: none; width: 100%; padding: {padding}; margin: 0; min-height: auto; padding-bottom: 20mm; }} 
+        @page {{ size: A4; margin: 10mm; }} 
+        .footer-container {{ position: fixed; bottom: 0; left: 0; width: 100%; background: white; z-index: 1000; }}
+    }} 
+    h1, h2, h3 {{ text-align: center; color: #111; column-span: all; }} 
+    p, li {{ line-height: 1.5; color: #000; text-align: justify; word-wrap: break-word; }} 
+    hr {{ border: 1px solid #ccc; margin: 15px 0; column-span: all; }} 
+    .content-body {{ {column_style} }} 
+    .footer-container {{ width: 100%; text-align: center; margin-top: 20px; }}
+    .footer {{ padding-top: 10px; border-top: 2px dashed #bbb; font-size: 13px; color: #444; display: inline-block; width: 90%; }}
     </style></head><body><div class="a4-page">{logo_html_top}<div class="content-body">{html_body}</div>{footer_html}</div></body></html>"""
 
+# ✅ WORD EXPORT
 def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
     doc = Document()
+    md_content = md_content.replace('\r', '')
     style = doc.styles['Normal']; font = style.font; font.name = 'Times New Roman'; font.size = Pt(11)
+    
     if is_2_col:
-        for s in doc.sections: s.top_margin = Inches(0.5); s.bottom_margin = Inches(0.5); s.left_margin = Inches(0.5); s.right_margin = Inches(0.5)
+        for s in doc.sections: s.top_margin = s.bottom_margin = s.left_margin = s.right_margin = Inches(0.4)
+
     if inst_logo:
-        inst_logo.seek(0); doc.add_picture(inst_logo, height=Inches(0.7)); doc.paragraphs[-1].alignment = 1
-    doc.add_heading(i_name, 0).alignment = 1
+        try:
+            inst_logo.seek(0)
+            doc.add_picture(inst_logo, height=Inches(0.8))
+            doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        except Exception: pass
+        
+    doc.add_heading(i_name, 0).alignment = WD_ALIGN_PARAGRAPH.CENTER
+
     if is_2_col:
-        new_section = doc.add_section(0); sectPr = new_section._sectPr; cols = sectPr.xpath('./w:cols')[0]; cols.set(qn('w:num'), '2'); cols.set(qn('w:space'), '720')
+        new_section = doc.add_section(0); sectPr = new_section._sectPr
+        cols = sectPr.xpath('./w:cols')[0]; cols.set(qn('w:num'), '2'); cols.set(qn('w:space'), '720') 
+
     for line in md_content.split('\n'):
-        if "# Answer Key" in line: doc.add_page_break(); doc.add_heading("Answer Key", 1); continue
-        p = doc.add_paragraph(clean_math_for_word(line)); p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        if line.strip() == "": continue
+        line = clean_math_for_word(line)
+        if "Answer Key" in line or "ANSWER KEY" in line:
+            doc.add_page_break(); doc.add_heading("Answer Key", 1); continue
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        parts = re.split(r'\*\*(.*?)\*\*', line)
+        for i, part in enumerate(parts):
+            if i % 2 == 1: p.add_run(part).bold = True
+            else: p.add_run(part)
+                
     for section in doc.sections:
         footer = section.footer.paragraphs[0] if section.footer.paragraphs else section.footer.add_paragraph()
-        footer.alignment = 1; footer.text = f"📍 {i_address} | 📞 {i_contact} | 👨‍🏫 {t_name}"
+        footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if inst_logo:
+            try:
+                inst_logo.seek(0)
+                footer.add_run().add_picture(inst_logo, height=Inches(0.18))
+                footer.add_run("  ")
+            except Exception: pass
+        run = footer.add_run(f"{i_name} | 📍 {i_address} | 📞 {i_contact} | 👨‍🏫 {t_name}")
+        run.font.size = Pt(10); run.font.color.rgb = RGBColor(100, 100, 100)
+            
     bio = BytesIO(); doc.save(bio); return bio.getvalue()
 
 # ==========================================
@@ -260,50 +305,87 @@ tab_create, tab_history = st.tabs(["🏠 Create New Paper", "🗂️ My Past Pap
 
 with tab_create:
     if not is_pro and papers_used >= FREE_LIMIT:
-        st.error("Free Trial Expired! Please Upgrade.")
+        st.error("Free Trial Expired! Please Upgrade to PRO.")
         st.stop()
         
+    st.markdown("### 1. Paper Details")
     c1, c2 = st.columns(2)
     with c1: sub = st.text_input("Subject")
     with c2: grade = st.text_input("Class")
     syl = st.text_area("Topics to Cover")
 
     st.markdown("---")
-    h1, h2, h3, h4 = st.columns([3, 2, 2, 3])
-    h1.write("**Type**"); h2.write("**Count**"); h3.write("**Marks**"); h4.write("**Diff**")
+    st.markdown("### 2. Set Questions & Marks")
+    diff_options = ["Easy", "Medium", "Hard", "Mixed"]
     
-    # Simple Interface for Demo (Expandable to all types)
-    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    mcq_c = c2.number_input("mcq_c", 0, 50, 5, label_visibility="collapsed")
-    mcq_m = c3.number_input("mcq_m", 1, 10, 1, label_visibility="collapsed")
-    mcq_d = c4.selectbox("mcq_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed")
-    c1.write("MCQs")
+    h1, h2, h3, h4 = st.columns([3, 2, 2, 3])
+    with h1: st.markdown("**Type**")
+    with h2: st.markdown("**Count**")
+    with h3: st.markdown("**Marks/Q**")
+    with h4: st.markdown("**Difficulty**")
 
+    # MCQ
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    short_c = c2.number_input("sh_c", 0, 20, 2, label_visibility="collapsed")
-    short_m = c3.number_input("sh_m", 1, 10, 2, label_visibility="collapsed")
-    short_d = c4.selectbox("sh_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", index=1)
-    c1.write("Short Questions")
+    with c1: st.write("Multiple Choice (MCQs)")
+    with c2: mcq_c = st.number_input("mcq_c", 0, 50, 5, label_visibility="collapsed", key="m_c")
+    with c3: mcq_m = st.number_input("mcq_m", 1, 10, 1, label_visibility="collapsed", key="m_m")
+    with c4: mcq_d = st.selectbox("mcq_d", diff_options, label_visibility="collapsed", key="m_d")
 
-    total_q = mcq_c + short_c
-    total_m = (mcq_c * mcq_m) + (short_c * short_m)
-    st.info(f"Total: {total_q} Questions | {total_m} Marks")
+    # Short
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
+    with c1: st.write("Short Answer")
+    with c2: short_c = st.number_input("sh_c", 0, 20, 3, label_visibility="collapsed", key="s_c")
+    with c3: short_m = st.number_input("sh_m", 1, 10, 2, label_visibility="collapsed", key="s_m")
+    with c4: short_d = st.selectbox("sh_d", diff_options, label_visibility="collapsed", key="s_d", index=1)
+
+    # Long
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
+    with c1: st.write("Long Answer")
+    with c2: long_c = st.number_input("l_c", 0, 20, 2, label_visibility="collapsed", key="l_c")
+    with c3: long_m = st.number_input("l_m", 1, 20, 5, label_visibility="collapsed", key="l_m")
+    with c4: long_d = st.selectbox("l_d", diff_options, label_visibility="collapsed", key="l_d", index=2)
+
+    total_q = mcq_c + short_c + long_c
+    calc_max_marks = (mcq_c * mcq_m) + (short_c * short_m) + (long_c * long_m)
+
+    st.info(f"📊 Total Questions: {total_q} | 🏆 Maximum Marks: {calc_max_marks}")
 
     if st.button("🚀 Generate Exam Paper", use_container_width=True):
-        header = f"# {inst_name}\n**Subject:** {sub} | **Class:** {grade}\n**Marks:** {total_m} | **Time:** {exam_time}\n***"
-        prompt = f"{header}\n{build_question_prompt(mcq_c, mcq_d, mcq_m, 0, '', 1, 0, '', 1, short_c, short_d, short_m, 0, '', 5, include_answer_key)}\n\nTopics: {syl}"
+        header = f"# {inst_name}\n**Subject:** {sub} | **Class:** {grade} | **Pattern:** {board_format}\n**Marks:** {calc_max_marks} | **Time:** {exam_time}\n***"
+        q_reqs = build_question_prompt(mcq_c, mcq_d, mcq_m, 0, '', 1, 0, '', 1, short_c, short_d, short_m, long_c, long_d, long_m, include_answer_key)
+        prompt = f"Topic: {syl}\n{header}\nQuestions:\n{q_reqs}\nLanguage: {paper_language}"
         
-        with st.spinner("Generating with simple language..."):
-            model = genai.GenerativeModel(working_model_name)
-            response = model.generate_content(prompt)
-            blocks = response.text.split("|||")
-            st.session_state.blocks = [{'id': str(uuid.uuid4()), 'text': b.strip()} for b in blocks if b.strip()]
-            update_paper_count(st.session_state.username)
+        with st.spinner("Generating paper in simple language..."):
+            try:
+                model = genai.GenerativeModel(working_model_name)
+                response = model.generate_content(prompt)
+                blocks = response.text.split("|||")
+                st.session_state.blocks = [{'id': str(uuid.uuid4()), 'text': b.strip()} for b in blocks if b.strip()]
+                st.session_state.file_name = f"{sub}_Paper"
+                update_paper_count(st.session_state.username)
+            except Exception as e: st.error(f"Error: {e}")
 
     if st.session_state.blocks:
-        final_text = "\n\n".join([b['text'] for b in st.session_state.blocks])
-        f_html = create_a4_html(final_text, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
-        f_word = create_word_docx(final_text, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
+        final_markdown = "\n\n".join([b['text'] for b in st.session_state.blocks])
+        final_html = create_a4_html(final_markdown, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
+        final_word = create_word_docx(final_markdown, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
         
-        st.download_button("🖨️ HTML", f_html, f"{sub}.html", "text/html")
-        st.download_button("📄 Word", f_word, f"{sub}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        st.download_button("🖨️ Download HTML", final_html, f"{st.session_state.file_name}.html", "text/html")
+        st.download_button("📄 Download Word", final_word, f"{st.session_state.file_name}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        if st.button("☁️ Save to Cloud"):
+            data = {"username": st.session_state.username, "date": datetime.now().strftime("%Y-%m-%d %H:%M"), "subject": sub, "board": board_format, "content": final_markdown}
+            supabase.table("papers").insert(data).execute()
+            st.success("Saved to Cloud!")
+
+with tab_history:
+    st.markdown(f"### ☁️ Cloud Papers for {st.session_state.username}")
+    res = supabase.table("papers").select("*").eq("username", st.session_state.username).order("id", desc=True).execute()
+    if not res.data: st.warning("No papers saved yet!")
+    else:
+        for p in res.data:
+            with st.expander(f"📄 {p['subject']} | {p['date']}"):
+                h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
+                h_word = create_word_docx(p['content'], inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
+                st.download_button("🖨️ HTML", h_html, f"History_{p['id']}.html", "text/html", key=f"h_{p['id']}")
+                st.download_button("📄 Word", h_word, f"History_{p['id']}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"w_{p['id']}")
+                if st.button("🗑️ Delete", key=f"d_{p['id']}"): delete_paper(p['id']); st.rerun()
