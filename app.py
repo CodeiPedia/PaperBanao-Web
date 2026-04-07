@@ -157,7 +157,6 @@ exam_time = st.sidebar.text_input("Exam Time", value="2 Hours")
 
 st.sidebar.markdown("---")
 st.sidebar.header("🏢 Footer Details")
-# 🌟 NEW: Teacher Name added here
 teacher_name = st.sidebar.text_input("Teacher Name", value="Mr. Sharma")
 inst_address = st.sidebar.text_input("Institute Address", value="123 Education Lane, City")
 inst_contact = st.sidebar.text_input("Contact Number", value="+91 9876543210")
@@ -224,7 +223,7 @@ def clean_math_for_word(text):
     text = text.replace('^2', '²').replace('^3', '³')
     return text.strip()
 
-# ✅ HTML EXPORT (Updated with Teacher Name & Small Logo in Footer)
+# ✅ HTML EXPORT (Fixed Footer for EVERY Printed Page)
 def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
     md_content = md_content.replace('\r', '') 
     md_content = clean_math_for_word(md_content)
@@ -245,15 +244,30 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
         logo_html_top = f"<div style='text-align: center; margin-bottom: 10px;'><img src='data:{img_type};base64,{base64_img}' style='max-height: 80px; width: auto;'/></div>"
         logo_html_footer = f"<img src='data:{img_type};base64,{base64_img}' style='height: 18px; vertical-align: middle; margin-right: 8px; border-radius: 2px;'/>"
     
-    # 🌟 HTML FOOTER UPDATED
-    footer_html = f"""<div class="footer" style="column-span: all;"><p>{logo_html_footer}<strong>{i_name}</strong> &nbsp;|&nbsp; 📍 {i_address} &nbsp;|&nbsp; 📞 {i_contact} &nbsp;|&nbsp; 👨‍🏫 <strong>{t_name}</strong></p></div>"""
+    # 🌟 HTML FOOTER (Wrapped in a fixed container)
+    footer_html = f"""<div class="footer-container"><div class="footer"><p>{logo_html_footer}<strong>{i_name}</strong> &nbsp;|&nbsp; 📍 {i_address} &nbsp;|&nbsp; 📞 {i_contact} &nbsp;|&nbsp; 👨‍🏫 <strong>{t_name}</strong></p></div></div>"""
     
     page_padding = "10mm" if is_2_col else "20mm"
     column_style = "column-count: 2; column-gap: 10mm; font-size: 14px;" if is_2_col else "font-size: 16px;"
 
-    return f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Question Paper</title><script>MathJax = {{ tex: {{ inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] }} }};</script><script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script><style>body {{ background-color: #f0f0f0; font-family: 'Times New Roman', Times, serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} .a4-page {{ background-color: white; width: 210mm; min-height: 297mm; padding: {page_padding}; box-sizing: border-box; box-shadow: 0 0 10px rgba(0,0,0,0.2); }} @media print {{ body {{ background-color: white; padding: 0; display: block; }} .a4-page {{ box-shadow: none; width: 100%; padding: {page_padding}; margin: 0; min-height: auto; }} @page {{ size: A4; margin: 0; }} }} h1, h2, h3 {{ text-align: center; color: #111; column-span: all; }} p, li {{ line-height: 1.5; color: #000; text-align: justify; word-wrap: break-word; }} hr {{ border: 1px solid #ccc; margin: 15px 0; column-span: all; }} .content-body {{ {column_style} }} .footer {{ margin-top: 30px; padding-top: 10px; border-top: 2px dashed #bbb; text-align: center; font-size: 13px; color: #444; page-break-inside: avoid; column-span: all; }}</style></head><body><div class="a4-page">{logo_html_top}<div class="content-body">{html_body}</div>{footer_html}</div></body></html>"""
+    return f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Question Paper</title><script>MathJax = {{ tex: {{ inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] }} }};</script><script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script><style>
+    body {{ background-color: #f0f0f0; font-family: 'Times New Roman', Times, serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} 
+    .a4-page {{ background-color: white; width: 210mm; min-height: 297mm; padding: {page_padding}; box-sizing: border-box; box-shadow: 0 0 10px rgba(0,0,0,0.2); position: relative; padding-bottom: 25mm; }} 
+    @media print {{ 
+        body {{ background-color: white; padding: 0; display: block; }} 
+        .a4-page {{ box-shadow: none; width: 100%; padding: {page_padding}; margin: 0; min-height: auto; padding-bottom: 20mm; }} 
+        @page {{ size: A4; margin: 10mm; }} 
+        .footer-container {{ position: fixed; bottom: 0; left: 0; width: 100%; background: white; z-index: 1000; }}
+    }} 
+    h1, h2, h3 {{ text-align: center; color: #111; column-span: all; }} 
+    p, li {{ line-height: 1.5; color: #000; text-align: justify; word-wrap: break-word; }} 
+    hr {{ border: 1px solid #ccc; margin: 15px 0; column-span: all; }} 
+    .content-body {{ {column_style} }} 
+    .footer-container {{ width: 100%; text-align: center; margin-top: 20px; }}
+    .footer {{ padding-top: 10px; border-top: 2px dashed #bbb; font-size: 13px; color: #444; display: inline-block; width: 90%; }}
+    </style></head><body><div class="a4-page">{logo_html_top}<div class="content-body">{html_body}</div>{footer_html}</div></body></html>"""
 
-# ✅ WORD EXPORT (Updated with Teacher Name & Small Logo in Footer for EVERY page)
+# ✅ WORD EXPORT
 def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
     doc = Document()
     md_content = md_content.replace('\r', '')
@@ -324,7 +338,7 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
                 if i % 2 == 1: p.add_run(part).bold = True
                 else: p.add_run(part)
                 
-    # 🌟 ADVANCED MS WORD FOOTER (Loops through every section/page)
+    # 🌟 ADVANCED MS WORD FOOTER
     for section in doc.sections:
         footer = section.footer
         footer_para = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
