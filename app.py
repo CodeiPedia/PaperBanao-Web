@@ -154,10 +154,11 @@ st.sidebar.header("🏫 Institute Details")
 inst_logo = st.sidebar.file_uploader("Upload Institute Logo (PNG/JPG)", type=["png", "jpg", "jpeg"])
 inst_name = st.sidebar.text_input("Institute Name", value="My Success Academy")
 exam_time = st.sidebar.text_input("Exam Time", value="2 Hours")
-# 🛑 Max Marks is removed from here because it's now auto-calculated!
 
 st.sidebar.markdown("---")
 st.sidebar.header("🏢 Footer Details")
+# 🌟 NEW: Teacher Name added here
+teacher_name = st.sidebar.text_input("Teacher Name", value="Mr. Sharma")
 inst_address = st.sidebar.text_input("Institute Address", value="123 Education Lane, City")
 inst_contact = st.sidebar.text_input("Contact Number", value="+91 9876543210")
 
@@ -178,7 +179,6 @@ def extract_text_from_pdf(uploaded_file, start_page, end_page):
         return "".join([reader.pages[i].extract_text() + "\n" for i in range(start_index, end_index)])
     except Exception: return ""
 
-# ✅ Prompt update: Now tells AI to print marks next to the question!
 def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answers):
     reqs = []
     if mcq_c > 0: reqs.append(f"- {mcq_c} Multiple Choice Questions (Diff: {mcq_d}). Provide 4 options. Write '[{mcq_m} Mark]' at the end of each question.")
@@ -224,8 +224,8 @@ def clean_math_for_word(text):
     text = text.replace('^2', '²').replace('^3', '³')
     return text.strip()
 
-# ✅ HTML EXPORT
-def create_a4_html(md_content, i_name, i_address, i_contact, inst_logo=None, is_2_col=False):
+# ✅ HTML EXPORT (Updated with Teacher Name & Small Logo in Footer)
+def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
     md_content = md_content.replace('\r', '') 
     md_content = clean_math_for_word(md_content)
     pb = "<div style='page-break-before: always; break-before: page; column-span: all; -webkit-column-span: all; width: 100%;'></div>\n"
@@ -234,20 +234,27 @@ def create_a4_html(md_content, i_name, i_address, i_contact, inst_logo=None, is_
     md_content = md_content.replace("# ANSWER KEY", pb + "# ANSWER KEY")
     
     html_body = markdown.markdown(md_content)
-    logo_html = ""
+    
+    logo_html_top = ""
+    logo_html_footer = ""
+    
     if inst_logo is not None:
+        inst_logo.seek(0)
         base64_img = base64.b64encode(inst_logo.getvalue()).decode()
         img_type = inst_logo.type
-        logo_html = f"<div style='text-align: center; margin-bottom: 10px;'><img src='data:{img_type};base64,{base64_img}' style='max-height: 80px; width: auto;'/></div>"
+        logo_html_top = f"<div style='text-align: center; margin-bottom: 10px;'><img src='data:{img_type};base64,{base64_img}' style='max-height: 80px; width: auto;'/></div>"
+        logo_html_footer = f"<img src='data:{img_type};base64,{base64_img}' style='height: 18px; vertical-align: middle; margin-right: 8px; border-radius: 2px;'/>"
     
-    footer_html = f"""<div class="footer" style="column-span: all;"><p><strong>{i_name}</strong> | 📍 {i_address} | 📞 {i_contact}</p></div>"""
+    # 🌟 HTML FOOTER UPDATED
+    footer_html = f"""<div class="footer" style="column-span: all;"><p>{logo_html_footer}<strong>{i_name}</strong> &nbsp;|&nbsp; 📍 {i_address} &nbsp;|&nbsp; 📞 {i_contact} &nbsp;|&nbsp; 👨‍🏫 <strong>{t_name}</strong></p></div>"""
+    
     page_padding = "10mm" if is_2_col else "20mm"
     column_style = "column-count: 2; column-gap: 10mm; font-size: 14px;" if is_2_col else "font-size: 16px;"
 
-    return f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Question Paper</title><script>MathJax = {{ tex: {{ inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] }} }};</script><script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script><style>body {{ background-color: #f0f0f0; font-family: 'Times New Roman', Times, serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} .a4-page {{ background-color: white; width: 210mm; min-height: 297mm; padding: {page_padding}; box-sizing: border-box; box-shadow: 0 0 10px rgba(0,0,0,0.2); }} @media print {{ body {{ background-color: white; padding: 0; display: block; }} .a4-page {{ box-shadow: none; width: 100%; padding: {page_padding}; margin: 0; min-height: auto; }} @page {{ size: A4; margin: 0; }} }} h1, h2, h3 {{ text-align: center; color: #111; column-span: all; }} p, li {{ line-height: 1.5; color: #000; text-align: justify; word-wrap: break-word; }} hr {{ border: 1px solid #ccc; margin: 15px 0; column-span: all; }} .content-body {{ {column_style} }}</style></head><body><div class="a4-page">{logo_html}<div class="content-body">{html_body}</div>{footer_html}</div></body></html>"""
+    return f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Question Paper</title><script>MathJax = {{ tex: {{ inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] }} }};</script><script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script><style>body {{ background-color: #f0f0f0; font-family: 'Times New Roman', Times, serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} .a4-page {{ background-color: white; width: 210mm; min-height: 297mm; padding: {page_padding}; box-sizing: border-box; box-shadow: 0 0 10px rgba(0,0,0,0.2); }} @media print {{ body {{ background-color: white; padding: 0; display: block; }} .a4-page {{ box-shadow: none; width: 100%; padding: {page_padding}; margin: 0; min-height: auto; }} @page {{ size: A4; margin: 0; }} }} h1, h2, h3 {{ text-align: center; color: #111; column-span: all; }} p, li {{ line-height: 1.5; color: #000; text-align: justify; word-wrap: break-word; }} hr {{ border: 1px solid #ccc; margin: 15px 0; column-span: all; }} .content-body {{ {column_style} }} .footer {{ margin-top: 30px; padding-top: 10px; border-top: 2px dashed #bbb; text-align: center; font-size: 13px; color: #444; page-break-inside: avoid; column-span: all; }}</style></head><body><div class="a4-page">{logo_html_top}<div class="content-body">{html_body}</div>{footer_html}</div></body></html>"""
 
-# ✅ WORD EXPORT
-def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, is_2_col=False):
+# ✅ WORD EXPORT (Updated with Teacher Name & Small Logo in Footer for EVERY page)
+def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
     doc = Document()
     md_content = md_content.replace('\r', '')
     style = doc.styles['Normal']
@@ -278,8 +285,10 @@ def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, i
             section.left_margin = Inches(0.4)
             section.right_margin = Inches(0.4)
 
+    # 🌟 TOP LOGO
     if inst_logo is not None:
         try:
+            inst_logo.seek(0)
             doc.add_picture(inst_logo, height=Inches(0.8))
             doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
         except Exception: pass
@@ -315,15 +324,33 @@ def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, i
                 if i % 2 == 1: p.add_run(part).bold = True
                 else: p.add_run(part)
                 
+    # 🌟 ADVANCED MS WORD FOOTER (Loops through every section/page)
     for section in doc.sections:
         footer = section.footer
         footer_para = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
-        footer_para.text = f"📍 {i_address}  |  📞 {i_contact}  |  Generated securely by PaperBanao AI"
         footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        for run in footer_para.runs:
-            run.font.name = 'Times New Roman'
-            run.font.size = Pt(10)
-            run.font.color.rgb = RGBColor(100, 100, 100)
+        
+        # 1. Add Small Logo in Footer
+        if inst_logo is not None:
+            try:
+                inst_logo.seek(0)
+                run_logo = footer_para.add_run()
+                run_logo.add_picture(inst_logo, height=Inches(0.18))
+                footer_para.add_run("  ") # Add space after logo
+            except Exception: pass
+            
+        # 2. Add Institute Name (Bold)
+        run_name = footer_para.add_run(f"{i_name}  |  ")
+        run_name.font.name = 'Times New Roman'
+        run_name.font.size = Pt(10)
+        run_name.font.bold = True
+        run_name.font.color.rgb = RGBColor(100, 100, 100)
+        
+        # 3. Add Address, Contact & Teacher Name
+        run_rest = footer_para.add_run(f"📍 {i_address}  |  📞 {i_contact}  |  👨‍🏫 {t_name}")
+        run_rest.font.name = 'Times New Roman'
+        run_rest.font.size = Pt(10)
+        run_rest.font.color.rgb = RGBColor(100, 100, 100)
             
     bio = BytesIO()
     doc.save(bio)
@@ -362,7 +389,6 @@ with tab_create:
     st.markdown("### 2. Set Questions, Marks & Difficulty")
     diff_options = ["Easy", "Medium", "Hard", "Mixed"]
     
-    # 🌟 NEW LAYOUT: 4 Columns (Label, Count, Marks/Q, Difficulty)
     h1, h2, h3, h4 = st.columns([3, 2, 2, 3])
     with h1: st.markdown("**Question Type**")
     with h2: st.markdown("**Count**")
@@ -415,7 +441,7 @@ with tab_create:
             st.warning("⚠️ Please select at least 1 question to generate.")
             st.stop()
 
-        # 🛑 Now passing the Marks to the Prompt function!
+        # 🛑 Passing the Marks to the Prompt function!
         q_reqs = build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answer_key)
         board_rules = f"Structure the paper matching {board_format} patterns."
         lang_rules = f"Generate paper in {paper_language}."
@@ -470,8 +496,9 @@ with tab_create:
                 st.columns([2, 1, 2])[1].image(inst_logo, width=150)
             st.markdown(final_markdown_paper)
             
-        final_html = create_a4_html(final_markdown_paper, inst_name, inst_address, inst_contact, inst_logo, is_two_column)
-        final_word = create_word_docx(final_markdown_paper, inst_name, inst_address, inst_contact, inst_logo, is_two_column)
+        # 🌟 Passing Teacher Name (t_name) to Export Functions
+        final_html = create_a4_html(final_markdown_paper, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
+        final_word = create_word_docx(final_markdown_paper, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
         
         c1, c2, c3 = st.columns(3)
         with c1: st.download_button("🖨️ Download HTML", data=final_html, file_name=st.session_state.file_name + ".html", mime="text/html", use_container_width=True)
@@ -490,8 +517,9 @@ with tab_history:
         for p in res.data:
             with st.expander(f"📄 {p['subject']} | {p['board']} | 🕒 {p['date']}"):
                 
-                h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact, inst_logo, is_two_column)
-                h_word = create_word_docx(p['content'], inst_name, inst_address, inst_contact, inst_logo, is_two_column)
+                # 🌟 Passing Teacher Name (t_name) to History Export
+                h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
+                h_word = create_word_docx(p['content'], inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
                 
                 c1, c2, c3 = st.columns(3)
                 with c1: st.download_button("🖨️ Download HTML", data=h_html, file_name=f"History_{p['id']}.html", mime="text/html", key=f"dl_h_{p['id']}", use_container_width=True)
