@@ -178,7 +178,6 @@ def extract_text_from_pdf(uploaded_file, start_page, end_page):
         return "".join([reader.pages[i].extract_text() + "\n" for i in range(start_index, end_index)])
     except Exception: return ""
 
-# ✅ THE FIX: Strict AI Command added here to STOP LaTeX Maths
 def build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d, include_answers):
     reqs = []
     if mcq_c > 0: reqs.append(f"- {mcq_c} Multiple Choice Questions (Diff: {mcq_d}). Provide 4 options.")
@@ -188,7 +187,8 @@ def build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short
     if long_c > 0:  reqs.append(f"- {long_c} Long Answer Questions (Diff: {long_d}).")
     if not reqs: return "No questions requested."
     
-    base_prompt = "\n".join(reqs) + "\n\nCRITICAL FORMATTING RULES:\n1. Separate the Main Header, EVERY SINGLE Question, and the Answer Key using exactly this delimiter: `|||` on a new line.\n2. MATH FORMATTING: DO NOT use LaTeX, MathJax, or symbols like $, $$, \\frac, \\times, \\(, \\). Write ALL mathematics in simple plain text (e.g., write 'x' or '*' for multiplication, 'a/b' for fractions, '^' for powers). This is EXTREMELY important for MS Word document compatibility."
+    # 🛑 STRICTEST MATH PROMPT
+    base_prompt = "\n".join(reqs) + "\n\nCRITICAL FORMATTING RULES:\n1. Separate the Main Header, EVERY SINGLE Question, and the Answer Key using exactly this delimiter: `|||` on a new line.\n2. MATH RULE: YOU ARE STRICTLY FORBIDDEN FROM USING LATEX. DO NOT use \\frac, \\(, \\), \\[, \\], $, or $$. Write fractions simply as 'a/b' and powers as '^2'. Use standard keyboard text ONLY."
     
     if include_answers: return base_prompt + "\nPut answers at the end under heading '# Answer Key'. Separate with `|||`."
     else: return base_prompt + "\nDO NOT provide answers. Provide ONLY the questions."
@@ -198,18 +198,27 @@ def regenerate_single_question(old_text):
     model = genai.GenerativeModel(working_model_name)
     return model.generate_content(prompt).text.strip()
 
-# ✅ Advanced Math Cleaner (Just as a backup)
+# 🛑 BRAHMASTRA MATH CLEANER (Regex Filter)
 def clean_math_for_word(text):
+    # 1. Convert LaTeX fractions \frac{a}{b} into simple a/b
+    text = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'\1/\2', text)
+    
+    # 2. Strip out inline math brackets \( and \) and \[ \]
+    text = re.sub(r'\\\((.*?)\\\)', r'\1', text)
+    text = re.sub(r'\\\[(.*?)\\\]', r'\1', text)
+    
+    # 3. Replace common symbols
     math_symbols = {
         r'\times': '×', r'\div': '÷', r'\pi': 'π', r'\theta': 'θ',
         r'\leq': '≤', r'\geq': '≥', r'\neq': '≠', r'^2': '²', r'^3': '³',
-        r'\alpha': 'α', r'\beta': 'β', r'\pm': '±', r'\circ': '°', r'\sqrt': '√',
-        r'\(': '', r'\)': '', r'\[': '', r'\]': '' # Removes stray math brackets
+        r'\alpha': 'α', r'\beta': 'β', r'\pm': '±', r'\circ': '°', r'\sqrt': '√'
     }
     for latex, symbol in math_symbols.items():
         text = text.replace(latex, symbol)
+        
+    # 4. Remove leftover $ signs and backslashes
     text = text.replace('$$', '').replace('$', '')
-    return text
+    return text.strip()
 
 # ✅ HTML EXPORT
 def create_a4_html(md_content, i_name, i_address, i_contact, inst_logo=None, is_2_col=False):
@@ -285,6 +294,7 @@ def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, i
     for line in md_content.split('\n'):
         if line.strip() == "": continue
         
+        # 🛑 यहाँ हमने ब्रह्मास्त्र फिल्टर लगाया है!
         line = clean_math_for_word(line)
         
         if "Answer Key" in line or "ANSWER KEY" in line:
