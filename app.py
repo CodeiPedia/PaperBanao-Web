@@ -178,6 +178,7 @@ def extract_text_from_pdf(uploaded_file, start_page, end_page):
         return "".join([reader.pages[i].extract_text() + "\n" for i in range(start_index, end_index)])
     except Exception: return ""
 
+# 🛑 THE FIX: STRICTEST POSSIBLE MATH PROMPT FOR ALL SUBJECTS
 def build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d, include_answers):
     reqs = []
     if mcq_c > 0: reqs.append(f"- {mcq_c} Multiple Choice Questions (Diff: {mcq_d}). Provide 4 options.")
@@ -187,27 +188,26 @@ def build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short
     if long_c > 0:  reqs.append(f"- {long_c} Long Answer Questions (Diff: {long_d}).")
     if not reqs: return "No questions requested."
     
-    # 🛑 STRICTEST MATH PROMPT
-    base_prompt = "\n".join(reqs) + "\n\nCRITICAL FORMATTING RULES:\n1. Separate the Main Header, EVERY SINGLE Question, and the Answer Key using exactly this delimiter: `|||` on a new line.\n2. MATH RULE: YOU ARE STRICTLY FORBIDDEN FROM USING LATEX. DO NOT use \\frac, \\(, \\), \\[, \\], $, or $$. Write fractions simply as 'a/b' and powers as '^2'. Use standard keyboard text ONLY."
+    base_prompt = "\n".join(reqs) + """\n\nCRITICAL FORMATTING RULES FOR ALL SUBJECTS:
+1. Separate the Main Header, EVERY SINGLE Question, and the Answer Key using exactly this delimiter: `|||` on a new line.
+2. ABSOLUTELY NO LATEX OR MATHJAX: You must write all math, physics, and chemistry formulas in simple plain readable text.
+   - FORBIDDEN: $, $$, \\frac, \\times, \\(, \\), \\sqrt, \\[, \\]
+   - REQUIRED: Use standard keyboard characters ONLY. Example: Use 'x' or '*' for multiply. Use '/' for fractions like (a+b)/c. Use '^' for powers like x^2. Use 'sqrt(x)' for square roots.
+   This is mandatory so students can easily read the MS Word document without confusing symbols."""
     
     if include_answers: return base_prompt + "\nPut answers at the end under heading '# Answer Key'. Separate with `|||`."
     else: return base_prompt + "\nDO NOT provide answers. Provide ONLY the questions."
 
 def regenerate_single_question(old_text):
-    prompt = f"You are an expert exam creator. Generate a NEW question to replace this old one:\n{old_text}\nProvide ONLY the new question text. DO NOT use LaTeX math symbols."
+    prompt = f"You are an expert exam creator. Generate a NEW question to replace this old one:\n{old_text}\nProvide ONLY the new question text. DO NOT use any LaTeX math symbols. Write fractions as a/b."
     model = genai.GenerativeModel(working_model_name)
     return model.generate_content(prompt).text.strip()
 
-# 🛑 BRAHMASTRA MATH CLEANER (Regex Filter)
+# 🛑 BRAHMASTRA MATH CLEANER (Just in case AI makes a mistake)
 def clean_math_for_word(text):
-    # 1. Convert LaTeX fractions \frac{a}{b} into simple a/b
-    text = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'\1/\2', text)
-    
-    # 2. Strip out inline math brackets \( and \) and \[ \]
+    text = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'(\1)/(\2)', text)
     text = re.sub(r'\\\((.*?)\\\)', r'\1', text)
     text = re.sub(r'\\\[(.*?)\\\]', r'\1', text)
-    
-    # 3. Replace common symbols
     math_symbols = {
         r'\times': '×', r'\div': '÷', r'\pi': 'π', r'\theta': 'θ',
         r'\leq': '≤', r'\geq': '≥', r'\neq': '≠', r'^2': '²', r'^3': '³',
@@ -215,8 +215,6 @@ def clean_math_for_word(text):
     }
     for latex, symbol in math_symbols.items():
         text = text.replace(latex, symbol)
-        
-    # 4. Remove leftover $ signs and backslashes
     text = text.replace('$$', '').replace('$', '')
     return text.strip()
 
@@ -294,7 +292,6 @@ def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, i
     for line in md_content.split('\n'):
         if line.strip() == "": continue
         
-        # 🛑 यहाँ हमने ब्रह्मास्त्र फिल्टर लगाया है!
         line = clean_math_for_word(line)
         
         if "Answer Key" in line or "ANSWER KEY" in line:
@@ -371,112 +368,4 @@ with tab_create:
     c1, c2, c3 = st.columns([2, 1, 2])
     with c1: st.markdown("<div style='padding-top: 10px;'>Fill in the Blanks</div>", unsafe_allow_html=True)
     with c2: fib_c = st.number_input("FIB count", min_value=0, max_value=20, value=3, label_visibility="collapsed", key="f_c")
-    with c3: fib_d = st.selectbox("FIB Diff", diff_options, label_visibility="collapsed", key="f_d")
-
-    c1, c2, c3 = st.columns([2, 1, 2])
-    with c1: st.markdown("<div style='padding-top: 10px;'>True / False</div>", unsafe_allow_html=True)
-    with c2: tf_c = st.number_input("TF count", min_value=0, max_value=20, value=3, label_visibility="collapsed", key="t_c")
-    with c3: tf_d = st.selectbox("TF Diff", diff_options, label_visibility="collapsed", key="t_d")
-
-    c1, c2, c3 = st.columns([2, 1, 2])
-    with c1: st.markdown("<div style='padding-top: 10px;'>Short Answer</div>", unsafe_allow_html=True)
-    with c2: short_c = st.number_input("Short count", min_value=0, max_value=20, value=3, label_visibility="collapsed", key="s_c")
-    with c3: short_d = st.selectbox("Short Diff", diff_options, label_visibility="collapsed", key="s_d")
-
-    c1, c2, c3 = st.columns([2, 1, 2])
-    with c1: st.markdown("<div style='padding-top: 10px;'>Long Answer</div>", unsafe_allow_html=True)
-    with c2: long_c = st.number_input("Long count", min_value=0, max_value=20, value=2, label_visibility="collapsed", key="l_c")
-    with c3: long_d = st.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d")
-
-    st.markdown("---")
-    if st.button("🚀 Generate Exam Paper", use_container_width=True):
-        total_q = mcq_c + fib_c + tf_c + short_c + long_c
-        
-        if total_q > 100:
-            st.error("🚨 Quality Alert: To maintain AI quality, you can only generate up to 100 total questions at a time.")
-            st.stop()
-        elif total_q == 0:
-            st.warning("⚠️ Please select at least 1 question to generate.")
-            st.stop()
-
-        q_reqs = build_question_prompt(mcq_c, mcq_d, fib_c, fib_d, tf_c, tf_d, short_c, short_d, long_c, long_d, include_answer_key)
-        board_rules = f"Structure the paper matching {board_format} patterns."
-        lang_rules = f"Generate paper in {paper_language}."
-        prompt = ""
-        
-        if "Syllabus" in source_choice and sub1 and syl1:
-            header = f"# {inst_name}\n**Class:** {grade1} | **Subject:** {sub1} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"
-            prompt = f"Create exam strictly covering: {syl1}\n{board_rules}\n{lang_rules}\nMUST START EXACTLY WITH HEADER:\n{header}\nQuestions:\n{q_reqs}"
-            st.session_state.file_name = f"{sub1}_Paper"
-            st.session_state.current_subject = f"{sub1} (Class: {grade1})"
-        elif "Deep Extract" in source_choice and up_pdf and sub2 and top2:
-            document_text = extract_text_from_pdf(up_pdf, start_p, end_p)
-            header = f"# {inst_name}\n**Subject:** {sub2} | **Topic:** {top2} | **Pattern:** {board_format}\n**Time Allowed:** {exam_time} | **Maximum Marks:** {max_marks} | **Total Questions:** {total_q}\n***"
-            prompt = f"Create exam ONLY for requested topic using text below.\n- Topic: {top2}\n{board_rules}\n{lang_rules}\nMUST START EXACTLY WITH HEADER:\n{header}\nQuestions:\n{q_reqs}\nText:\n---\n{document_text}\n---"
-            st.session_state.file_name = f"{top2}_Paper"
-            st.session_state.current_subject = f"{sub2} - {top2}"
-
-        if prompt:
-            with st.spinner("Generating Paper via Cloud AI..."):
-                try:
-                    model = genai.GenerativeModel(working_model_name)
-                    response = model.generate_content(prompt)
-                    raw_blocks = response.text.split("|||")
-                    st.session_state.blocks = [{'id': str(uuid.uuid4()), 'text': b.strip()} for b in raw_blocks if b.strip()]
-                    update_paper_count(st.session_state.username) 
-                except Exception as e: st.error(f"API Error: {e}")
-
-    if st.session_state.blocks:
-        st.markdown("---")
-        with st.expander("🛠️ Open Question Bank Manager (Edit / Delete / Regenerate)", expanded=False):
-            for i, block in enumerate(st.session_state.blocks):
-                with st.container(border=True):
-                    st.session_state.blocks[i]['text'] = st.text_area(f"Block {i}", value=block['text'], key=f"edit_{block['id']}", height=120, label_visibility="collapsed")
-                    c1, c2, c3 = st.columns([1, 1, 4])
-                    with c1:
-                        if st.button("🗑️ Delete", key=f"del_{block['id']}", use_container_width=True):
-                            if f"edit_{block['id']}" in st.session_state: del st.session_state[f"edit_{block['id']}"]
-                            st.session_state.blocks.pop(i); st.rerun()
-                    with c2:
-                        if st.button("🔄 Regenerate", key=f"reg_{block['id']}", use_container_width=True):
-                            with st.spinner("Generating..."):
-                                st.session_state.blocks[i]['text'] = regenerate_single_question(block['text'])
-                                if f"edit_{block['id']}" in st.session_state: del st.session_state[f"edit_{block['id']}"]
-                                st.rerun()
-
-        final_markdown_paper = "\n\n".join([b['text'] for b in st.session_state.blocks])
-        st.markdown("### 🖨️ Finalize & Download")
-        
-        with st.expander("👁️ Preview Final Paper Layout", expanded=False):
-            if inst_logo is not None:
-                st.columns([2, 1, 2])[1].image(inst_logo, width=150)
-            st.markdown(final_markdown_paper)
-            
-        final_html = create_a4_html(final_markdown_paper, inst_name, inst_address, inst_contact, inst_logo, is_two_column)
-        final_word = create_word_docx(final_markdown_paper, inst_name, inst_address, inst_contact, inst_logo, is_two_column)
-        
-        c1, c2, c3 = st.columns(3)
-        with c1: st.download_button("🖨️ Download HTML", data=final_html, file_name=st.session_state.file_name + ".html", mime="text/html", use_container_width=True)
-        with c2: st.download_button("📄 Download MS Word", data=final_word, file_name=st.session_state.file_name + ".docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
-        with c3:
-            if st.button("☁️ Save to Cloud History", use_container_width=True):
-                data = {"username": st.session_state.username, "date": datetime.now().strftime("%Y-%m-%d %H:%M"), "subject": st.session_state.current_subject, "board": board_format, "content": final_markdown_paper}
-                supabase.table("papers").insert(data).execute()
-                st.success("✅ Saved securely to Cloud!")
-
-with tab_history:
-    st.markdown(f"### ☁️ Cloud Papers for {st.session_state.username}")
-    res = supabase.table("papers").select("*").eq("username", st.session_state.username).order("id", desc=True).execute()
-    if not res.data: st.warning("You haven't saved any papers to the cloud yet!")
-    else:
-        for p in res.data:
-            with st.expander(f"📄 {p['subject']} | {p['board']} | 🕒 {p['date']}"):
-                
-                h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact, inst_logo, is_two_column)
-                h_word = create_word_docx(p['content'], inst_name, inst_address, inst_contact, inst_logo, is_two_column)
-                
-                c1, c2, c3 = st.columns(3)
-                with c1: st.download_button("🖨️ Download HTML", data=h_html, file_name=f"History_{p['id']}.html", mime="text/html", key=f"dl_h_{p['id']}", use_container_width=True)
-                with c2: st.download_button("📄 Download Word", data=h_word, file_name=f"History_{p['id']}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"dl_w_{p['id']}", use_container_width=True)
-                with c3: 
-                    if st.button("🗑️ Delete", key=f"del_{p['id']}", on_click=delete_paper, args=(p['id'],), use_container_width=True): st.rerun()
+    with c3: fib_d = st.selectbox
