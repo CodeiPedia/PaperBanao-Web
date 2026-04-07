@@ -166,6 +166,7 @@ paper_language = st.sidebar.selectbox("Paper Language", ["English", "Hindi", "Bi
 include_answer_key = st.sidebar.toggle("Include Answer Key", value=True)
 is_two_column = st.sidebar.toggle("📄 Two-Column Format (Save Paper)", value=False)
 
+
 # --- Helper Functions ---
 def extract_text_from_pdf(uploaded_file, start_page, end_page):
     try:
@@ -175,7 +176,7 @@ def extract_text_from_pdf(uploaded_file, start_page, end_page):
         return "".join([reader.pages[i].extract_text() + "\n" for i in range(start_index, end_index)])
     except Exception: return ""
 
-# 🛑 IMPROVED PROMPT FOR SIMPLE HINDI/HINGLISH
+# 🛑 UPDATED PROMPT: STRICT SIMPLE HINDI & UNICODE SYMBOLS
 def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answers):
     reqs = []
     if mcq_c > 0: reqs.append(f"- {mcq_c} MCQ Questions ({mcq_d}). [{mcq_m} Mark each]")
@@ -184,16 +185,15 @@ def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, 
     if short_c > 0: reqs.append(f"- {short_c} Short Questions ({short_d}). [{short_m} Marks each]")
     if long_c > 0:  reqs.append(f"- {long_c} Long Questions ({long_d}). [{long_m} Marks each]")
     
-    # Simple Language Instructions
     lang_instruction = """
-    LANGUAGE RULE: Use simple, easy-to-understand Hindi (Hinglish mix is okay). 
-    Avoid extremely difficult academic Hindi words. 
-    Always provide English terms in brackets for technical words. 
-    Example: 'अभाज्य संख्या (Prime Number)' or 'ब्याज (Interest)'.
-    The tone should be like a helpful teacher in a rural school.
+    LANGUAGE RULE: Use extremely simple, easy-to-understand Hindi (Hinglish mix is encouraged). 
+    DO NOT use difficult or high-level academic Hindi words. 
+    Always provide common English terms in brackets for any technical words. 
+    Example: Use 'अभाज्य संख्या (Prime Number)', 'अंश (Numerator)', 'हर (Denominator)', 'ब्याज (Interest)', 'वर्गमूल (Square Root)'.
+    Tone should be simple, like a local teacher explaining to students in a village.
     """
     
-    base_prompt = "\n".join(reqs) + f"\n\n{lang_instruction}\n\nCRITICAL: Use `|||` delimiter between every block. Use Unicode symbols for Math (θ, π, √, ², ³)."
+    base_prompt = "\n".join(reqs) + f"\n\n{lang_instruction}\n\nCRITICAL: Use `|||` delimiter between every block. Use actual Unicode symbols for Math (θ, π, √, ², ³) instead of LaTeX or words."
     
     if include_answers: return base_prompt + "\nAdd Answer Key at the end under heading '# Answer Key' separated by `|||`."
     return base_prompt
@@ -207,9 +207,8 @@ def clean_math_for_word(text):
         text = text.replace(latex, symbol)
     return text.strip()
 
-# --- HTML/WORD EXPORT FUNCTIONS (same as previous optimized versions) ---
+# --- EXPORT FUNCTIONS ---
 def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
-    # (Existing function with fixed footer logic)
     md_content = md_content.replace('\r', '') 
     md_content = clean_math_for_word(md_content)
     pb = "<div style='page-break-before: always; break-before: page; column-span: all; -webkit-column-span: all; width: 100%;'></div>\n"
@@ -273,14 +272,13 @@ with tab_create:
     h1, h2, h3, h4 = st.columns([3, 2, 2, 3])
     h1.write("**Type**"); h2.write("**Count**"); h3.write("**Marks**"); h4.write("**Diff**")
     
-    # MCQ
+    # Simple Interface for Demo (Expandable to all types)
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     mcq_c = c2.number_input("mcq_c", 0, 50, 5, label_visibility="collapsed")
     mcq_m = c3.number_input("mcq_m", 1, 10, 1, label_visibility="collapsed")
     mcq_d = c4.selectbox("mcq_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed")
     c1.write("MCQs")
 
-    # Short
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     short_c = c2.number_input("sh_c", 0, 20, 2, label_visibility="collapsed")
     short_m = c3.number_input("sh_m", 1, 10, 2, label_visibility="collapsed")
