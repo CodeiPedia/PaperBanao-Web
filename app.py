@@ -167,6 +167,7 @@ paper_language = st.sidebar.selectbox("Paper Language", ["English", "Hindi", "Bi
 include_answer_key = st.sidebar.toggle("Include Answer Key", value=True)
 is_two_column = st.sidebar.toggle("📄 Two-Column Format (Save Paper)", value=False)
 
+
 # --- Helper Functions ---
 def extract_text_from_pdf(uploaded_file, start_page, end_page):
     try:
@@ -193,7 +194,22 @@ def regenerate_single_question(old_text):
     model = genai.GenerativeModel(working_model_name)
     return model.generate_content(prompt).text.strip()
 
-# ✅ UPDATED HTML EXPORT (Fixes Answer Key Page Break & Layout)
+# ✅ WORD EXPORT के लिए नया Math Cleaner Function
+def clean_math_for_word(text):
+    # कॉमन LaTeX मैथ कोडिंग को नॉर्मल निशानों (Unicode) में बदलना
+    math_symbols = {
+        r'\times': '×', r'\div': '÷', r'\pi': 'π', r'\theta': 'θ',
+        r'\leq': '≤', r'\geq': '≥', r'\neq': '≠', r'^2': '²', r'^3': '³',
+        r'\alpha': 'α', r'\beta': 'β', r'\pm': '±', r'\circ': '°', r'\sqrt': '√'
+    }
+    for latex, symbol in math_symbols.items():
+        text = text.replace(latex, symbol)
+    
+    # $ और $$ निशानों को डिलीट करना
+    text = text.replace('$$', '').replace('$', '')
+    return text
+
+# ✅ UPDATED HTML EXPORT
 def create_a4_html(md_content, i_name, i_address, i_contact, inst_logo=None, is_2_col=False):
     # 🛑 FIX 1: Remove hidden characters that cause issues
     md_content = md_content.replace('\r', '') 
@@ -218,7 +234,7 @@ def create_a4_html(md_content, i_name, i_address, i_contact, inst_logo=None, is_
 
     return f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Question Paper</title><script>MathJax = {{ tex: {{ inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] }} }};</script><script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script><style>body {{ background-color: #f0f0f0; font-family: 'Times New Roman', Times, serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} .a4-page {{ background-color: white; width: 210mm; min-height: 297mm; padding: {page_padding}; box-sizing: border-box; box-shadow: 0 0 10px rgba(0,0,0,0.2); }} @media print {{ body {{ background-color: white; padding: 0; display: block; }} .a4-page {{ box-shadow: none; width: 100%; padding: {page_padding}; margin: 0; min-height: auto; }} @page {{ size: A4; margin: 0; }} }} h1, h2, h3 {{ text-align: center; color: #111; column-span: all; }} p, li {{ line-height: 1.5; color: #000; }} hr {{ border: 1px solid #ccc; margin: 15px 0; column-span: all; }} .content-body {{ {column_style} }}</style></head><body><div class="a4-page">{logo_html}<div class="content-body">{html_body}</div>{footer_html}</div></body></html>"""
 
-# ✅ UPDATED WORD EXPORT (Fixes Small Boxes & Answer Key)
+# ✅ UPDATED WORD EXPORT
 def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, is_2_col=False):
     doc = Document()
     
@@ -249,6 +265,9 @@ def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, i
 
     for line in md_content.split('\n'):
         if line.strip() == "": continue
+        
+        # 🛑 FIX 5: Math Cleaner Function Added Here
+        line = clean_math_for_word(line)
         
         # 🛑 FIX 4: Stronger Answer Key Check for Word
         if "Answer Key" in line or "ANSWER KEY" in line:
