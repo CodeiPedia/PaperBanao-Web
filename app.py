@@ -10,7 +10,7 @@ import hashlib
 import base64
 from docx import Document
 from docx.shared import Inches
-from docx.oxml.ns import qn  # <--- NEW IMPORT FOR 2-COLUMN WORD
+from docx.oxml.ns import qn
 from io import BytesIO
 
 # --- SUPABASE ---
@@ -165,10 +165,7 @@ st.sidebar.header("📜 Formatting & Layout")
 board_format = st.sidebar.selectbox("Board Pattern", ["Standard", "BSEB (Bihar Board)", "CBSE", "ICSE"])
 paper_language = st.sidebar.selectbox("Paper Language", ["English", "Hindi", "Bilingual"])
 include_answer_key = st.sidebar.toggle("Include Answer Key", value=True)
-
-# ✅ NEW TOGGLE FOR 2-COLUMN FORMAT
 is_two_column = st.sidebar.toggle("📄 Two-Column Format (Save Paper)", value=False)
-
 
 # --- Helper Functions ---
 def extract_text_from_pdf(uploaded_file, start_page, end_page):
@@ -196,9 +193,17 @@ def regenerate_single_question(old_text):
     model = genai.GenerativeModel(working_model_name)
     return model.generate_content(prompt).text.strip()
 
-# ✅ UPDATED HTML EXPORT (Supports 2-Column & Small Margins)
+# ✅ UPDATED HTML EXPORT (Fixes Answer Key Page Break & Layout)
 def create_a4_html(md_content, i_name, i_address, i_contact, inst_logo=None, is_2_col=False):
-    md_content = md_content.replace("# Answer Key", "<div style='page-break-before: always;'></div>\n# Answer Key")
+    # 🛑 FIX 1: Remove hidden characters that cause issues
+    md_content = md_content.replace('\r', '') 
+    
+    # 🛑 FIX 2: Stronger Page Break for Answer Key
+    pb = "<div style='page-break-before: always; break-before: page; column-span: all; -webkit-column-span: all; width: 100%;'></div>\n"
+    md_content = md_content.replace("# Answer Key", pb + "# Answer Key")
+    md_content = md_content.replace("## Answer Key", pb + "## Answer Key")
+    md_content = md_content.replace("# ANSWER KEY", pb + "# ANSWER KEY")
+    
     html_body = markdown.markdown(md_content)
     logo_html = ""
     if inst_logo is not None:
@@ -208,17 +213,18 @@ def create_a4_html(md_content, i_name, i_address, i_contact, inst_logo=None, is_
     
     footer_html = f"""<div class="footer" style="column-span: all;"><p><strong>{i_name}</strong> | 📍 {i_address} | 📞 {i_contact}</p></div>"""
     
-    # CSS LOGIC FOR MARGINS AND COLUMNS
-    page_padding = "10mm" if is_2_col else "20mm" # Minimum margin if 2-col
+    page_padding = "10mm" if is_2_col else "20mm"
     column_style = "column-count: 2; column-gap: 10mm; font-size: 14px;" if is_2_col else "font-size: 16px;"
 
-    return f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Question Paper</title><script>MathJax = {{ tex: {{ inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] }} }};</script><script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script><style>body {{ background-color: #f0f0f0; font-family: 'Times New Roman', Times, serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} .a4-page {{ background-color: white; width: 210mm; min-height: 297mm; padding: {page_padding}; box-sizing: border-box; box-shadow: 0 0 10px rgba(0,0,0,0.2); }} @media print {{ body {{ background-color: white; padding: 0; display: block; }} .a4-page {{ box-shadow: none; width: 100%; padding: {page_padding}; margin: 0; min-height: auto; }} @page {{ size: A4; margin: 0; }} }} h1, h2, h3 {{ text-align: center; color: #111; column-span: all; }} p, li {{ line-height: 1.5; color: #000; }} hr {{ border: 1px solid #ccc; margin: 15px 0; column-span: all; }} .footer {{ margin-top: 30px; padding-top: 10px; border-top: 2px dashed #bbb; text-align: center; font-size: 12px; color: #444; page-break-inside: avoid; column-span: all; }} .content-body {{ {column_style} }}</style></head><body><div class="a4-page">{logo_html}<div class="content-body">{html_body}</div>{footer_html}</div></body></html>"""
+    return f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Question Paper</title><script>MathJax = {{ tex: {{ inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] }} }};</script><script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script><style>body {{ background-color: #f0f0f0; font-family: 'Times New Roman', Times, serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} .a4-page {{ background-color: white; width: 210mm; min-height: 297mm; padding: {page_padding}; box-sizing: border-box; box-shadow: 0 0 10px rgba(0,0,0,0.2); }} @media print {{ body {{ background-color: white; padding: 0; display: block; }} .a4-page {{ box-shadow: none; width: 100%; padding: {page_padding}; margin: 0; min-height: auto; }} @page {{ size: A4; margin: 0; }} }} h1, h2, h3 {{ text-align: center; color: #111; column-span: all; }} p, li {{ line-height: 1.5; color: #000; }} hr {{ border: 1px solid #ccc; margin: 15px 0; column-span: all; }} .content-body {{ {column_style} }}</style></head><body><div class="a4-page">{logo_html}<div class="content-body">{html_body}</div>{footer_html}</div></body></html>"""
 
-# ✅ UPDATED WORD EXPORT (Supports 2-Column & Small Margins via XML)
+# ✅ UPDATED WORD EXPORT (Fixes Small Boxes & Answer Key)
 def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, is_2_col=False):
     doc = Document()
     
-    # SET MINIMUM MARGINS (0.4 Inches) FOR ALL SECTIONS
+    # 🛑 FIX 3: Remove hidden '\r' characters to STOP small boxes in MS Word
+    md_content = md_content.replace('\r', '')
+    
     if is_2_col:
         for section in doc.sections:
             section.top_margin = Inches(0.4)
@@ -226,7 +232,6 @@ def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, i
             section.left_margin = Inches(0.4)
             section.right_margin = Inches(0.4)
 
-    # Logo & Header (Always Single Column / Centered)
     if inst_logo is not None:
         try:
             doc.add_picture(inst_logo, height=Inches(0.8))
@@ -235,20 +240,22 @@ def create_word_docx(md_content, i_name, i_address, i_contact, inst_logo=None, i
     header = doc.add_heading(i_name, level=0)
     header.alignment = 1 
 
-    # ENABLE 2-COLUMN FOR QUESTIONS
     if is_2_col:
-        new_section = doc.add_section(0) # 0 = Continuous Section Break
+        new_section = doc.add_section(0) 
         sectPr = new_section._sectPr
         cols = sectPr.xpath('./w:cols')[0]
         cols.set(qn('w:num'), '2')
-        cols.set(qn('w:space'), '360') # 0.25 Inch gap between columns
+        cols.set(qn('w:space'), '360') 
 
     for line in md_content.split('\n'):
         if line.strip() == "": continue
-        if "# Answer Key" in line:
-            doc.add_page_break() # Answer Key starts on fresh page
+        
+        # 🛑 FIX 4: Stronger Answer Key Check for Word
+        if "Answer Key" in line or "ANSWER KEY" in line:
+            doc.add_page_break() 
             doc.add_heading("Answer Key", level=1)
             continue
+            
         if line.startswith('# '): doc.add_heading(line.replace('# ', ''), level=1)
         elif line.startswith('## '): doc.add_heading(line.replace('## ', ''), level=2)
         else:
@@ -387,7 +394,6 @@ with tab_create:
                 st.columns([2, 1, 2])[1].image(inst_logo, width=150)
             st.markdown(final_markdown_paper)
             
-        # ✅ PASS is_two_column FLAG TO EXPORT FUNCTIONS
         final_html = create_a4_html(final_markdown_paper, inst_name, inst_address, inst_contact, inst_logo, is_two_column)
         final_word = create_word_docx(final_markdown_paper, inst_name, inst_address, inst_contact, inst_logo, is_two_column)
         
@@ -408,7 +414,6 @@ with tab_history:
         for p in res.data:
             with st.expander(f"📄 {p['subject']} | {p['board']} | 🕒 {p['date']}"):
                 
-                # ✅ PASS is_two_column FLAG FOR HISTORY DOWNLOADS TOO
                 h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact, inst_logo, is_two_column)
                 h_word = create_word_docx(p['content'], inst_name, inst_address, inst_contact, inst_logo, is_two_column)
                 
