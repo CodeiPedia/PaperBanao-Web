@@ -406,4 +406,4 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         
         run_rest = footer_para.add_run(f"📍 {i_address}  |  📞 {i_contact}  |  👨‍🏫 {t_name}")
         run_rest.font.size = Pt(10)
-        run_rest.font.color.rgb = RGBColor(100, 100, 1
+        run_rest.font.color.rgb = RGBColor(100, 100, 1)
