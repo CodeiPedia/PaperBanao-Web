@@ -167,7 +167,7 @@ inst_contact = st.sidebar.text_input("Contact Number", value="+91 9876543210")
 st.sidebar.markdown("---")
 st.sidebar.header("📜 Formatting")
 board_format = st.sidebar.selectbox("Board Pattern", ["Standard", "BSEB (Bihar Board)", "CBSE", "ICSE"])
-# Language selection will now dynamically control prompt instructions
+# Language selection controls AI Output
 paper_language = st.sidebar.selectbox("Paper Language", ["English", "Hindi", "Bilingual"])
 include_answer_key = st.sidebar.toggle("Include Answer Key", value=True)
 is_two_column = st.sidebar.toggle("📄 Two-Column Format", value=False)
@@ -204,7 +204,7 @@ def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, 
     if short_c > 0: reqs.append(f"- {short_c} Short Q (Diff: {short_d}). [{short_m} Marks each]")
     if long_c > 0:  reqs.append(f"- {long_c} Long Q (Diff: {long_d}). [{long_m} Marks each]")
     
-    # 🌟 FIX 3: Dynamic Language Rules
+    # Dynamic Language Rules
     if selected_language == "English":
         lang_instruction = "LANGUAGE RULE: Generate the ENTIRE paper and answers strictly in the English language."
     elif selected_language == "Hindi":
@@ -212,7 +212,6 @@ def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, 
     else:
         lang_instruction = "LANGUAGE RULE: Generate the paper in Hinglish (a mix of simple Hindi and English). Provide English terms in brackets for technical words."
     
-    # Square Box prevention instruction included
     base_prompt = "\n".join(reqs) + f"\n\n{lang_instruction}\n\n" + """CRITICAL FORMATTING:
 1. Separate Main Header, every Question, and Answer Key with delimiter: `|||` on a new line.
 2. MATH: USE UNICODE SYMBOLS ONLY (θ, π, √, ²). NO LaTeX. Write fractions as a/b.
@@ -234,31 +233,44 @@ def clean_math_for_word(text):
     latex_map = {r'\pi': 'π', r'\theta': 'θ', r'\sqrt': '√', r'\times': '×', r'\div': '÷', '$': '', '^2': '²', '^3': '³'}
     for k, v in latex_map.items(): text = text.replace(k, v)
     
-    # Extra cleanup to prevent square boxes in Word
+    # Cleanup to prevent square boxes in Word
     text = text.replace('☐', '[ ]').replace('☑', '[x]')
     text = text.replace('•', '-').replace('◦', '-')
-    text = text.replace('\u200b', '') # remove zero width space
+    text = text.replace('\u200b', '')
     
     return text.strip()
 
-# 🌟 FIX 1 (HTML): Footer on all pages using Web Standard <tfoot>
+# 🌟 FIX 1 & 2: Perfect Horizontal HTML Header
 def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
     md_content = clean_math_for_word(md_content)
-    # Page break applied dynamically before Answer Key
-    pb = "<div style='page-break-before: always; column-span: all; width: 100%;'></div>\n"
-    md_content = md_content.replace("# Answer Key", pb + "# Answer Key")
-    html_body = markdown.markdown(md_content)
     
-    logo_top = ""
+    # Process Logo
+    logo_html_inline = ""
     logo_footer = ""
     if inst_logo:
         inst_logo.seek(0)
         b64 = base64.b64encode(inst_logo.getvalue()).decode()
-        logo_top = f"<div style='text-align: center; margin-bottom: 20px;'><img src='data:{inst_logo.type};base64,{b64}' style='max-height: 70px;'/></div>"
+        logo_html_inline = f"<img src='data:{inst_logo.type};base64,{b64}' style='max-height: 45px; margin-right: 15px; vertical-align: middle;'/>"
         logo_footer = f"<img src='data:{inst_logo.type};base64,{b64}' style='height: 18px; vertical-align: middle; margin-right: 8px;'/>"
     
+    # Create the beautiful horizontal header
+    custom_header = f"<div style='text-align: center; margin-bottom: 20px; column-span: all; width: 100%;'>{logo_html_inline}<h1 style='display: inline-block; margin: 0; vertical-align: middle;'>{i_name}</h1></div>"
+    
+    # 1. Replace first occurrence of Name with Custom Header (For Question Paper)
+    md_content = md_content.replace(f"# {i_name}", custom_header, 1)
+    
+    # 2. Add Page Break + Custom Header to Answer Key Page
+    pb = "<div style='page-break-before: always; column-span: all; width: 100%;'></div>\n\n"
+    ans_header = f"{pb}{custom_header}\n\n<h2 style='text-align: center; column-span: all;'>Answer Key</h2>\n\n"
+    
+    md_content = md_content.replace("# Answer Key", ans_header)
+    md_content = md_content.replace("## Answer Key", ans_header)
+    md_content = md_content.replace("# ANSWER KEY", ans_header)
+    
+    html_body = markdown.markdown(md_content)
     col_style = "column-count: 2; column-gap: 10mm; font-size: 14px;" if is_2_col else "font-size: 16px;"
 
+    # Clean HTML layout, ensuring Top Logo doesn't repeat, but footer repeats
     return f"""<!DOCTYPE html><html><head><style>
     body {{ background: #f0f0f0; font-family: 'Times New Roman', serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} 
     .a4-page {{ background: white; width: 210mm; min-height: 297mm; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.2); box-sizing: border-box; }} 
@@ -268,16 +280,14 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
         body {{ background: white; padding: 0; display: block; }} 
         .a4-page {{ box-shadow: none; width: 100%; min-height: auto; padding: 0; margin: 0; }} 
         @page {{ size: A4; margin: 10mm; }} 
-        /* <tfoot> makes the footer repeat on ALL printed pages */
         tfoot {{ display: table-footer-group; }}
-        thead {{ display: table-header-group; }}
     }} 
     h1, h2, h3 {{ text-align: center; column-span: all; }} 
     .content-body {{ {col_style} }} 
     .footer-content {{ text-align: center; margin-top: 20px; padding-top: 10px; border-top: 2px dashed #bbb; font-size: 13px; color: #444; }}
     </style></head><body><div class="a4-page">
     <table>
-        <thead><tr><td>{logo_top}</td></tr></thead>
+        <thead><tr><td></td></tr></thead>
         <tbody><tr><td><div class="content-body">{html_body}</div></td></tr></tbody>
         <tfoot><tr><td>
             <div class="footer-content">
@@ -287,17 +297,32 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     </table>
     </div></body></html>"""
 
-# 🌟 FIX 1 & 2 (DOCX): Mangal font for Square Box fix + Section Footer logic
+# 🌟 FIX 3: Horizontal Header & Square Box fix in DOCX
 def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
     doc = Document()
     md_content = md_content.replace('\r', '')
     
     style = doc.styles['Normal']
     font = style.font
-    # Mangal is natively safe for English + Math + Hindi, preventing square boxes
     font.name = 'Mangal' 
     font.size = Pt(11)
     
+    # Helper to add inline horizontal header in Word
+    def insert_inline_header():
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if inst_logo is not None:
+            try:
+                inst_logo.seek(0)
+                r_img = p.add_run()
+                r_img.add_picture(inst_logo, height=Inches(0.45))
+                p.add_run("   ") 
+            except Exception: pass
+        r_text = p.add_run(i_name)
+        r_text.font.name = 'Mangal'
+        r_text.font.size = Pt(16)
+        r_text.bold = True
+
     for i in range(3):
         try:
             h_style = doc.styles[f'Heading {i}']
@@ -318,15 +343,8 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         for section in doc.sections:
             section.top_margin = section.bottom_margin = section.left_margin = section.right_margin = Inches(0.4)
 
-    if inst_logo is not None:
-        try:
-            inst_logo.seek(0)
-            doc.add_picture(inst_logo, height=Inches(0.7))
-            doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        except Exception: pass
-        
-    header = doc.add_heading(i_name, level=0)
-    header.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    # Insert Header on First Page
+    insert_inline_header()
 
     if is_2_col:
         new_section = doc.add_section(0) 
@@ -336,27 +354,32 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         cols.set(qn('w:space'), '720') 
 
     for line in md_content.split('\n'):
-        if line.strip() == "": continue
-        line = clean_math_for_word(line)
+        line_clean = line.strip()
+        if not line_clean: continue
+        line_clean = clean_math_for_word(line_clean)
         
-        if "Answer Key" in line or "ANSWER KEY" in line:
+        # Skip the AI text heading since we generated a custom visual one
+        if line_clean == f"# {i_name}":
+            continue
+            
+        if "Answer Key" in line_clean or "ANSWER KEY" in line_clean:
             doc.add_page_break() 
+            insert_inline_header() # Logo on front page of Answer Key
             doc.add_heading("Answer Key", level=1)
             continue
             
-        if line.startswith('# '): 
-            doc.add_heading(line.replace('# ', ''), level=1)
-        elif line.startswith('## '): 
-            doc.add_heading(line.replace('## ', ''), level=2)
+        if line_clean.startswith('# '): 
+            doc.add_heading(line_clean.replace('# ', ''), level=1)
+        elif line_clean.startswith('## '): 
+            doc.add_heading(line_clean.replace('## ', ''), level=2)
         else:
             p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY 
-            parts = re.split(r'\*\*(.*?)\*\*', line)
+            parts = re.split(r'\*\*(.*?)\*\*', line_clean)
             for i, part in enumerate(parts):
                 run = p.add_run(part)
                 if i % 2 == 1: run.bold = True
                 
-    # Applying footer securely to doc.sections[0] only (will auto-link to all pages)
     if doc.sections:
         footer = doc.sections[0].footer
         footer_para = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
@@ -457,7 +480,6 @@ with tab_create:
     if st.button("🚀 Generate Paper", use_container_width=True):
         header = f"# {inst_name}\n**Subject:** {sub} | **Class:** {grade}\n**Marks:** {total_m} | **Time:** {exam_time}\n***"
         
-        # Now passing the selected paper_language explicitly!
         q_reqs = build_question_prompt(
             mcq_c, mcq_d, mcq_m, 
             fib_c, fib_d, fib_m, 
