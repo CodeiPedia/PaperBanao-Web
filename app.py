@@ -144,7 +144,7 @@ else:
         st.sidebar.error("⚠️ Free Trial Expired!")
 
 st.sidebar.markdown("---")
-# 🌟 BYOK (Bring Your Own Key) Feature added here
+# 🌟 BYOK (Bring Your Own Key) Feature
 st.sidebar.header("⚙️ Advanced Settings")
 st.sidebar.write("सर्वर लिमिट खत्म होने पर अपनी खुद की फ्री Gemini API Key इस्तेमाल करें।")
 user_api_key = st.sidebar.text_input("Your Gemini API Key (Optional)", type="password", help="Get your free key from Google AI Studio")
@@ -174,7 +174,6 @@ is_two_column = st.sidebar.toggle("📄 Two-Column Format", value=False)
 # ==========================================
 # --- API CONFIGURATION LOGIC ---
 # ==========================================
-# Use user's key if provided, otherwise use server default
 active_api_key = user_api_key if user_api_key.strip() != "" else SERVER_API_KEY
 genai.configure(api_key=active_api_key)
 
@@ -230,6 +229,7 @@ def clean_math_for_word(text):
     latex_map = {r'\pi': 'π', r'\theta': 'θ', r'\sqrt': '√', r'\times': '×', r'\div': '÷', '$': '', '^2': '²', '^3': '³'}
     for k, v in latex_map.items(): text = text.replace(k, v)
     
+    # Square Box Fix for MS Word
     text = text.replace('☐', '[ ]')
     text = text.replace('☑', '[x]')
     text = text.replace('•', '-')
@@ -237,7 +237,7 @@ def clean_math_for_word(text):
     
     return text.strip()
 
-# ✅ HTML EXPORT (Fixed Footer)
+# ✅ HTML EXPORT
 def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
     md_content = clean_math_for_word(md_content)
     pb = "<div style='page-break-before: always; column-span: all; width: 100%;'></div>\n"
@@ -260,231 +260,4 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     body {{ background: #f0f0f0; font-family: 'Times New Roman', serif; padding: 20px; display: flex; justify-content: center; }} 
     .a4-page {{ background: white; width: 210mm; min-height: 297mm; padding: {padding}; box-shadow: 0 0 10px rgba(0,0,0,0.2); position: relative; padding-bottom: 25mm; }} 
     @media print {{ 
-        body {{ background: white; padding: 0; }} 
-        .a4-page {{ box-shadow: none; width: 100%; padding-bottom: 20mm; }} 
-        @page {{ size: A4; margin: 10mm; }} 
-        .footer-container {{ position: fixed; bottom: 0; left: 0; width: 100%; background: white; }}
-    }} 
-    h1, h2, h3 {{ text-align: center; column-span: all; }} 
-    .content-body {{ {col_style} }} 
-    .footer-container {{ text-align: center; margin-top: 20px; }}
-    .footer {{ padding-top: 10px; border-top: 2px dashed #bbb; font-size: 12px; color: #444; display: inline-block; width: 90%; }}
-    </style></head><body><div class="a4-page">{logo_top}<div class="content-body">{html_body}</div>{footer}</div></body></html>"""
-
-# ✅ WORD EXPORT
-def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
-    doc = Document()
-    md_content = md_content.replace('\r', '')
-    
-    style = doc.styles['Normal']
-    font = style.font
-    font.name = 'Arial' 
-    font.size = Pt(11)
-    
-    rFonts = style.element.rPr.rFonts
-    if rFonts is not None:
-        rFonts.set(qn('w:cs'), 'Mangal') 
-    
-    for i in range(3):
-        try:
-            h_style = doc.styles[f'Heading {i}']
-            h_style.font.name = 'Arial'
-            if h_style.element.rPr.rFonts is not None:
-                h_style.element.rPr.rFonts.set(qn('w:cs'), 'Mangal')
-            h_style.font.color.rgb = RGBColor(0, 0, 0)
-            if i == 0:
-                h_style.font.size = Pt(16)
-                h_style.font.bold = True
-            elif i == 1:
-                h_style.font.size = Pt(12)
-                h_style.font.bold = True
-            elif i == 2:
-                h_style.font.size = Pt(11)
-                h_style.font.bold = True
-        except KeyError: pass
-
-    if is_2_col:
-        for section in doc.sections:
-            section.top_margin = section.bottom_margin = section.left_margin = section.right_margin = Inches(0.4)
-
-    if inst_logo is not None:
-        try:
-            inst_logo.seek(0)
-            doc.add_picture(inst_logo, height=Inches(0.7))
-            doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        except Exception: pass
-        
-    header = doc.add_heading(i_name, level=0)
-    header.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    if is_2_col:
-        new_section = doc.add_section(0) 
-        sectPr = new_section._sectPr
-        cols = sectPr.xpath('./w:cols')[0]
-        cols.set(qn('w:num'), '2')
-        cols.set(qn('w:space'), '720') 
-
-    for line in md_content.split('\n'):
-        if line.strip() == "": continue
-        line = clean_math_for_word(line)
-        
-        if "Answer Key" in line or "ANSWER KEY" in line:
-            doc.add_page_break() 
-            doc.add_heading("Answer Key", level=1)
-            continue
-            
-        if line.startswith('# '): 
-            doc.add_heading(line.replace('# ', ''), level=1)
-        elif line.startswith('## '): 
-            doc.add_heading(line.replace('## ', ''), level=2)
-        else:
-            p = doc.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY 
-            parts = re.split(r'\*\*(.*?)\*\*', line)
-            for i, part in enumerate(parts):
-                run = p.add_run(part)
-                if i % 2 == 1: run.bold = True
-                
-    for section in doc.sections:
-        footer = section.footer
-        footer_para = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
-        footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
-        if inst_logo is not None:
-            try:
-                inst_logo.seek(0)
-                run_logo = footer_para.add_run()
-                run_logo.add_picture(inst_logo, height=Inches(0.18))
-                footer_para.add_run("  ") 
-            except Exception: pass
-            
-        run_name = footer_para.add_run(f"{i_name}  |  ")
-        run_name.font.name = 'Arial'
-        run_name.font.size = Pt(10)
-        run_name.font.bold = True
-        run_name.font.color.rgb = RGBColor(100, 100, 100)
-        
-        run_rest = footer_para.add_run(f"📍 {i_address}  |  📞 {i_contact}  |  👨‍🏫 {t_name}")
-        run_rest.font.name = 'Arial'
-        run_rest.font.size = Pt(10)
-        run_rest.font.color.rgb = RGBColor(100, 100, 100)
-            
-    bio = BytesIO()
-    doc.save(bio)
-    return bio.getvalue()
-
-# ==========================================
-# --- MAIN LAYOUT ---
-# ==========================================
-tab_create, tab_history = st.tabs(["🏠 Create Paper", "🗂️ Cloud History"])
-
-with tab_create:
-    if not is_pro and papers_used >= FREE_LIMIT:
-        st.error("Free Trial Expired! Please Upgrade.")
-        st.stop()
-        
-    st.markdown("### 1. Source")
-    source = st.radio("Method:", ["⚡ Quick", "📄 PDF Extract"], horizontal=True, label_visibility="collapsed")
-
-    sub, grade, syl, up_pdf = "", "", "", None
-    if source == "⚡ Quick":
-        c1, c2 = st.columns(2)
-        sub = c1.text_input("Subject")
-        grade = c2.text_input("Class")
-        syl = st.text_area("Topics")
-    else:
-        up_pdf = st.file_uploader("Upload PDF", type="pdf")
-        sub = st.text_input("Subject (PDF)")
-
-    st.markdown("---")
-    st.markdown("### 2. Counts & Marks")
-    h1, h2, h3, h4 = st.columns([3, 2, 2, 3])
-    h1.write("**Type**"); h2.write("**Count**"); h3.write("**Marks**"); h4.write("**Diff**")
-
-    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    with c1: st.markdown("<div style='padding-top: 10px;'>Multiple Choice (MCQs)</div>", unsafe_allow_html=True)
-    with c2: mcq_c = st.number_input("MCQ count", min_value=0, max_value=50, value=5, label_visibility="collapsed", key="m_c")
-    with c3: mcq_m = st.number_input("MCQ mark", min_value=1, value=1, label_visibility="collapsed", key="m_m")
-    with c4: mcq_d = st.selectbox("MCQ Diff", diff_options, label_visibility="collapsed", key="m_d")
-
-    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    with c1: st.markdown("<div style='padding-top: 10px;'>Fill in the Blanks</div>", unsafe_allow_html=True)
-    with c2: fib_c = st.number_input("FIB count", min_value=0, max_value=20, value=3, label_visibility="collapsed", key="f_c")
-    with c3: fib_m = st.number_input("FIB mark", min_value=1, value=1, label_visibility="collapsed", key="f_m")
-    with c4: fib_d = st.selectbox("FIB Diff", diff_options, label_visibility="collapsed", key="f_d")
-
-    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    with c1: st.markdown("<div style='padding-top: 10px;'>True / False</div>", unsafe_allow_html=True)
-    with c2: tf_c = st.number_input("TF count", min_value=0, max_value=20, value=3, label_visibility="collapsed", key="t_c")
-    with c3: tf_m = st.number_input("TF mark", min_value=1, value=1, label_visibility="collapsed", key="t_m")
-    with c4: tf_d = st.selectbox("TF Diff", diff_options, label_visibility="collapsed", key="t_d")
-
-    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    with c1: st.markdown("<div style='padding-top: 10px;'>Short Answer</div>", unsafe_allow_html=True)
-    with c2: short_c = st.number_input("Short count", min_value=0, max_value=20, value=3, label_visibility="collapsed", key="s_c")
-    with c3: short_m = st.number_input("Short mark", min_value=1, value=2, label_visibility="collapsed", key="s_m")
-    with c4: short_d = st.selectbox("Short Diff", diff_options, label_visibility="collapsed", key="s_d")
-
-    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    with c1: st.markdown("<div style='padding-top: 10px;'>Long Answer</div>", unsafe_allow_html=True)
-    with c2: long_c = st.number_input("Long count", min_value=0, max_value=20, value=2, label_visibility="collapsed", key="l_c")
-    with c3: long_m = st.number_input("Long mark", min_value=1, value=5, label_visibility="collapsed", key="l_m")
-    with c4: long_d = st.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d")
-
-    # 🌟 DYNAMIC MARKS CALCULATOR
-    total_q = mcq_c + fib_c + tf_c + short_c + long_c
-    calc_max_marks = (mcq_c * mcq_m) + (fib_c * fib_m) + (tf_c * tf_m) + (short_c * short_m) + (long_c * long_m)
-
-    if st.button("🚀 Generate Paper", use_container_width=True):
-        header = f"# {inst_name}\n**Subject:** {sub} | **Class:** {grade}\n**Marks:** {total_m} | **Time:** {exam_time}\n***"
-        q_reqs = build_question_prompt(mcq_c, mcq_d, mcq_m, 0, '', 1, 0, '', 1, short_c, short_d, short_m, 0, '', 5, include_answer_key)
-        prompt = f"{header}\n{q_reqs}\nTopics: {syl}"
-        
-        with st.spinner("AI is thinking in simple language..."):
-            try:
-                model = genai.GenerativeModel(working_model_name)
-                resp = model.generate_content(prompt)
-                blocks = resp.text.split("|||")
-                st.session_state.blocks = [{'id': str(uuid.uuid4()), 'text': b.strip()} for b in blocks if b.strip()]
-                st.session_state.file_name = f"{sub}_Paper"
-                update_paper_count(st.session_state.username)
-                st.rerun()
-            except Exception as e:
-                error_msg = str(e).lower()
-                # 🌟 Smart Error Handling applied here
-                if "429" in error_msg or "quota" in error_msg:
-                    st.error("🚨 सर्वर की डेली लिमिट खत्म हो गई है!")
-                    st.warning("💡 सुझाव: बिना रुके पेपर बनाने के लिए बायीं तरफ (Sidebar) 'Advanced Settings' में अपनी खुद की फ्री Gemini API Key डालें।")
-                elif "api_key_invalid" in error_msg or "api key not valid" in error_msg or "invalid" in error_msg:
-                    st.error("❌ आपने जो API Key डाली है वह गलत है। कृपया जांचें।")
-                else:
-                    st.error(f"Error: {e}")
-
-    if st.session_state.blocks:
-        st.markdown("---")
-        with st.expander("🛠️ Edit Questions"):
-            for i, b in enumerate(st.session_state.blocks):
-                st.session_state.blocks[i]['text'] = st.text_area(f"Block {i}", b['text'], height=100)
-        
-        paper_md = "\n\n".join([b['text'] for b in st.session_state.blocks])
-        f_html = create_a4_html(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
-        f_word = create_word_docx(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
-        
-        c1, c2, c3 = st.columns(3)
-        c1.download_button("🖨️ HTML", f_html, f"{sub}.html", "text/html")
-        c2.download_button("📄 Word", f_word, f"{sub}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-        if c3.button("☁️ Save History"):
-            data = {"username": st.session_state.username, "date": datetime.now().strftime("%Y-%m-%d"), "subject": sub, "board": board_format, "content": paper_md}
-            supabase.table("papers").insert(data).execute()
-            st.success("Saved!")
-
-with tab_history:
-    st.markdown("### Cloud History")
-    res = supabase.table("papers").select("*").eq("username", st.session_state.username).order("id", desc=True).execute()
-    if res.data:
-        for p in res.data:
-            with st.expander(f"📄 {p['subject']} ({p['date']})"):
-                h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
-                st.download_button("Download HTML", h_html, f"History_{p['id']}.html", "text/html", key=f"h_{p['id']}")
-                if st.button("Delete", key=f"d_{p['id']}"):
-                    delete_paper(p['id']); st.rerun()
+        body
