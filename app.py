@@ -401,23 +401,39 @@ with tab_create:
     h1, h2, h3, h4 = st.columns([3, 2, 2, 3])
     h1.write("**Type**"); h2.write("**Count**"); h3.write("**Marks**"); h4.write("**Diff**")
 
-    # MCQ Row
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    c1.write("MCQs")
-    mcq_c = c2.number_input("mcq_c", 0, 50, 5, label_visibility="collapsed", key="m_c")
-    mcq_m = c3.number_input("mcq_m", 1, 10, 1, label_visibility="collapsed", key="m_m")
-    mcq_d = c4.selectbox("mcq_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="m_d")
+    with c1: st.markdown("<div style='padding-top: 10px;'>Multiple Choice (MCQs)</div>", unsafe_allow_html=True)
+    with c2: mcq_c = st.number_input("MCQ count", min_value=0, max_value=50, value=5, label_visibility="collapsed", key="m_c")
+    with c3: mcq_m = st.number_input("MCQ mark", min_value=1, value=1, label_visibility="collapsed", key="m_m")
+    with c4: mcq_d = st.selectbox("MCQ Diff", diff_options, label_visibility="collapsed", key="m_d")
 
-    # Short Row
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    c1.write("Short Answer")
-    short_c = c2.number_input("sh_c", 0, 20, 2, label_visibility="collapsed", key="s_c")
-    short_m = c3.number_input("sh_m", 1, 10, 2, label_visibility="collapsed", key="s_m")
-    short_d = c4.selectbox("sh_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="s_d", index=1)
+    with c1: st.markdown("<div style='padding-top: 10px;'>Fill in the Blanks</div>", unsafe_allow_html=True)
+    with c2: fib_c = st.number_input("FIB count", min_value=0, max_value=20, value=3, label_visibility="collapsed", key="f_c")
+    with c3: fib_m = st.number_input("FIB mark", min_value=1, value=1, label_visibility="collapsed", key="f_m")
+    with c4: fib_d = st.selectbox("FIB Diff", diff_options, label_visibility="collapsed", key="f_d")
 
-    total_q = mcq_c + short_c
-    total_m = (mcq_c * mcq_m) + (short_c * short_m)
-    st.info(f"Total: {total_q} Q | Max Marks: {total_m}")
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
+    with c1: st.markdown("<div style='padding-top: 10px;'>True / False</div>", unsafe_allow_html=True)
+    with c2: tf_c = st.number_input("TF count", min_value=0, max_value=20, value=3, label_visibility="collapsed", key="t_c")
+    with c3: tf_m = st.number_input("TF mark", min_value=1, value=1, label_visibility="collapsed", key="t_m")
+    with c4: tf_d = st.selectbox("TF Diff", diff_options, label_visibility="collapsed", key="t_d")
+
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
+    with c1: st.markdown("<div style='padding-top: 10px;'>Short Answer</div>", unsafe_allow_html=True)
+    with c2: short_c = st.number_input("Short count", min_value=0, max_value=20, value=3, label_visibility="collapsed", key="s_c")
+    with c3: short_m = st.number_input("Short mark", min_value=1, value=2, label_visibility="collapsed", key="s_m")
+    with c4: short_d = st.selectbox("Short Diff", diff_options, label_visibility="collapsed", key="s_d")
+
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
+    with c1: st.markdown("<div style='padding-top: 10px;'>Long Answer</div>", unsafe_allow_html=True)
+    with c2: long_c = st.number_input("Long count", min_value=0, max_value=20, value=2, label_visibility="collapsed", key="l_c")
+    with c3: long_m = st.number_input("Long mark", min_value=1, value=5, label_visibility="collapsed", key="l_m")
+    with c4: long_d = st.selectbox("Long Diff", diff_options, label_visibility="collapsed", key="l_d")
+
+    # 🌟 DYNAMIC MARKS CALCULATOR
+    total_q = mcq_c + fib_c + tf_c + short_c + long_c
+    calc_max_marks = (mcq_c * mcq_m) + (fib_c * fib_m) + (tf_c * tf_m) + (short_c * short_m) + (long_c * long_m)
 
     if st.button("🚀 Generate Paper", use_container_width=True):
         header = f"# {inst_name}\n**Subject:** {sub} | **Class:** {grade}\n**Marks:** {total_m} | **Time:** {exam_time}\n***"
