@@ -146,7 +146,7 @@ else:
 st.sidebar.markdown("---")
 # 🌟 BYOK (Bring Your Own Key) Feature
 st.sidebar.header("⚙️ Advanced Settings")
-st.sidebar.write("सर्वर लिमिट खत्म होने पर अपनी खुद की फ्री Gemini API Key इस्तेमाल करें।")
+st.sidebar.write("Use your own free Gemini API Key when the server limit is reached.")
 user_api_key = st.sidebar.text_input("Your Gemini API Key (Optional)", type="password", help="Get your free key from Google AI Studio")
 
 if user_api_key:
@@ -407,35 +407,35 @@ with tab_create:
     c1.write("MCQs")
     mcq_c = c2.number_input("mcq_c", 0, 50, 5, label_visibility="collapsed", key="m_c")
     mcq_m = c3.number_input("mcq_m", 1, 10, 1, label_visibility="collapsed", key="m_m")
-    mcq_d = c4.selectbox("mcq_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="m_d")
+    mcq_d = c4.selectbox("mcq_d", ["Easy", "Medium", "Hard", "Mixed"], label_visibility="collapsed", key="m_d")
 
     # FIB Row
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     c1.write("Fill in the Blanks")
     fib_c = c2.number_input("fib_c", 0, 20, 3, label_visibility="collapsed", key="f_c")
     fib_m = c3.number_input("fib_m", 1, 10, 1, label_visibility="collapsed", key="f_m")
-    fib_d = c4.selectbox("fib_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="f_d")
+    fib_d = c4.selectbox("fib_d", ["Easy", "Medium", "Hard","Mixed" ], label_visibility="collapsed", key="f_d")
 
     # True/False Row
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     c1.write("True / False")
     tf_c = c2.number_input("tf_c", 0, 20, 3, label_visibility="collapsed", key="t_c")
     tf_m = c3.number_input("tf_m", 1, 10, 1, label_visibility="collapsed", key="t_m")
-    tf_d = c4.selectbox("tf_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="t_d")
+    tf_d = c4.selectbox("tf_d", ["Easy", "Medium", "Hard","Mixed" ], label_visibility="collapsed", key="t_d")
 
     # Short Row
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     c1.write("Short Answer")
     short_c = c2.number_input("sh_c", 0, 20, 3, label_visibility="collapsed", key="s_c")
     short_m = c3.number_input("sh_m", 1, 10, 2, label_visibility="collapsed", key="s_m")
-    short_d = c4.selectbox("sh_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="s_d", index=1)
+    short_d = c4.selectbox("sh_d", ["Easy", "Medium", "Hard", "Mixed" ], label_visibility="collapsed", key="s_d", index=1)
 
     # Long Row
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     c1.write("Long Answer")
     long_c = c2.number_input("l_c", 0, 20, 2, label_visibility="collapsed", key="l_c")
     long_m = c3.number_input("l_m", 1, 20, 5, label_visibility="collapsed", key="l_m")
-    long_d = c4.selectbox("l_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="l_d", index=2)
+    long_d = c4.selectbox("l_d", ["Easy", "Medium", "Hard","Mixed" ], label_visibility="collapsed", key="l_d", index=2)
 
     # 🌟 CALCULATION FIX FOR ALL 5 TYPES
     total_q = mcq_c + fib_c + tf_c + short_c + long_c
@@ -471,10 +471,10 @@ with tab_create:
             except Exception as e:
                 error_msg = str(e).lower()
                 if "429" in error_msg or "quota" in error_msg:
-                    st.error("🚨 सर्वर की डेली लिमिट खत्म हो गई है!")
-                    st.warning("💡 सुझाव: बिना रुके पेपर बनाने के लिए बायीं तरफ (Sidebar) 'Advanced Settings' में अपनी खुद की फ्री Gemini API Key डालें।")
+                    st.error("🚨 The daily server limit has been exceeded!")
+                    st.warning("💡 Tip: For uninterrupted paper generation, enter your own free Gemini API Key under 'Advanced Settings' in the sidebar.")
                 elif "api_key_invalid" in error_msg or "api key not valid" in error_msg or "invalid" in error_msg:
-                    st.error("❌ आपने जो API Key डाली है वह गलत है। कृपया जांचें।")
+                    st.error("❌ The API Key you entered is invalid. Please check and try again.")
                 else:
                     st.error(f"Error: {e}")
 
