@@ -144,7 +144,7 @@ else:
         st.sidebar.error("⚠️ Free Trial Expired!")
 
 st.sidebar.markdown("---")
-# 🌟 BYOK (Bring Your Own Key) Feature
+# BYOK Feature
 st.sidebar.header("⚙️ Advanced Settings")
 st.sidebar.write("Use your own free Gemini API Key when the server limit is reached.")
 user_api_key = st.sidebar.text_input("Your Gemini API Key (Optional)", type="password", help="Get your free key from Google AI Studio")
@@ -167,6 +167,7 @@ inst_contact = st.sidebar.text_input("Contact Number", value="+91 9876543210")
 st.sidebar.markdown("---")
 st.sidebar.header("📜 Formatting")
 board_format = st.sidebar.selectbox("Board Pattern", ["Standard", "BSEB (Bihar Board)", "CBSE", "ICSE"])
+# Language selection will now dynamically control prompt instructions
 paper_language = st.sidebar.selectbox("Paper Language", ["English", "Hindi", "Bilingual"])
 include_answer_key = st.sidebar.toggle("Include Answer Key", value=True)
 is_two_column = st.sidebar.toggle("📄 Two-Column Format", value=False)
@@ -184,7 +185,7 @@ try:
 except Exception as e: 
     working_model_name = "models/gemini-1.5-flash-latest"
     if user_api_key:
-        st.sidebar.error("❌ आपकी API Key Invalid है। कृपया सही Key डालें।")
+        st.sidebar.error("❌ Invalid API Key. Please check your entry.")
 
 # --- Helper Functions ---
 def extract_text_from_pdf(uploaded_file, start_page, end_page):
@@ -195,7 +196,7 @@ def extract_text_from_pdf(uploaded_file, start_page, end_page):
         return "".join([reader.pages[i].extract_text() + "\n" for i in range(start_index, end_index)])
     except Exception: return ""
 
-def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answers):
+def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answers, selected_language):
     reqs = []
     if mcq_c > 0: reqs.append(f"- {mcq_c} MCQs (Diff: {mcq_d}). [{mcq_m} Mark each]")
     if fib_c > 0: reqs.append(f"- {fib_c} FIBs (Diff: {fib_d}). [{fib_m} Marks each]")
@@ -203,22 +204,26 @@ def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, 
     if short_c > 0: reqs.append(f"- {short_c} Short Q (Diff: {short_d}). [{short_m} Marks each]")
     if long_c > 0:  reqs.append(f"- {long_c} Long Q (Diff: {long_d}). [{long_m} Marks each]")
     
-    lang_instruction = """
-    LANGUAGE RULE: If the subject is technical or language is Hindi/Bilingual, use extremely simple Hindi (Hinglish mix is encouraged). 
-    Avoid tough academic Hindi words. Provide English terms in brackets for technical words. 
-    Example: 'अंश [Numerator]', 'हर [Denominator]', 'अभाज्य संख्या [Prime Number]'.
-    """
+    # 🌟 FIX 3: Dynamic Language Rules
+    if selected_language == "English":
+        lang_instruction = "LANGUAGE RULE: Generate the ENTIRE paper and answers strictly in the English language."
+    elif selected_language == "Hindi":
+        lang_instruction = "LANGUAGE RULE: Generate the paper in simple Hindi. Avoid tough academic Hindi words. Provide English terms in brackets for technical words. Example: 'अंश [Numerator]'."
+    else:
+        lang_instruction = "LANGUAGE RULE: Generate the paper in Hinglish (a mix of simple Hindi and English). Provide English terms in brackets for technical words."
     
+    # Square Box prevention instruction included
     base_prompt = "\n".join(reqs) + f"\n\n{lang_instruction}\n\n" + """CRITICAL FORMATTING:
 1. Separate Main Header, every Question, and Answer Key with delimiter: `|||` on a new line.
 2. MATH: USE UNICODE SYMBOLS ONLY (θ, π, √, ²). NO LaTeX. Write fractions as a/b.
+3. DO NOT use special checkboxes or bullets like ☐, ☑, •, ◦. Use standard text like [ ] or (A).
     """
     
-    if include_answers: return base_prompt + "\nAdd '# Answer Key' at end, also separated by `|||`. Use simple language in answers too."
+    if include_answers: return base_prompt + "\nAdd '# Answer Key' at end, also separated by `|||`. Use the requested language in answers too."
     return base_prompt
 
 def regenerate_single_question(old_text):
-    prompt = f"Generate a NEW question to replace this. Use simple Hindi/Hinglish with English brackets where needed. Use Unicode math symbols (θ, π, √, ²). ONLY output the question text:\n{old_text}"
+    prompt = f"Generate a NEW question to replace this. Keep the original language style. Use Unicode math symbols (θ, π, √, ²). ONLY output the question text:\n{old_text}"
     model = genai.GenerativeModel(working_model_name)
     return model.generate_content(prompt).text.strip()
 
@@ -229,17 +234,17 @@ def clean_math_for_word(text):
     latex_map = {r'\pi': 'π', r'\theta': 'θ', r'\sqrt': '√', r'\times': '×', r'\div': '÷', '$': '', '^2': '²', '^3': '³'}
     for k, v in latex_map.items(): text = text.replace(k, v)
     
-    # Square Box Fix for MS Word
-    text = text.replace('☐', '[ ]')
-    text = text.replace('☑', '[x]')
-    text = text.replace('•', '-')
-    text = text.replace('◦', '-')
+    # Extra cleanup to prevent square boxes in Word
+    text = text.replace('☐', '[ ]').replace('☑', '[x]')
+    text = text.replace('•', '-').replace('◦', '-')
+    text = text.replace('\u200b', '') # remove zero width space
     
     return text.strip()
 
-# ✅ HTML EXPORT
+# 🌟 FIX 1 (HTML): Footer on all pages using Web Standard <tfoot>
 def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
     md_content = clean_math_for_word(md_content)
+    # Page break applied dynamically before Answer Key
     pb = "<div style='page-break-before: always; column-span: all; width: 100%;'></div>\n"
     md_content = md_content.replace("# Answer Key", pb + "# Answer Key")
     html_body = markdown.markdown(md_content)
@@ -249,48 +254,54 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     if inst_logo:
         inst_logo.seek(0)
         b64 = base64.b64encode(inst_logo.getvalue()).decode()
-        logo_top = f"<div style='text-align: center;'><img src='data:{inst_logo.type};base64,{b64}' style='max-height: 70px;'/></div>"
+        logo_top = f"<div style='text-align: center; margin-bottom: 20px;'><img src='data:{inst_logo.type};base64,{b64}' style='max-height: 70px;'/></div>"
         logo_footer = f"<img src='data:{inst_logo.type};base64,{b64}' style='height: 18px; vertical-align: middle; margin-right: 8px;'/>"
     
-    footer = f"""<div class="footer-container"><div class="footer"><p>{logo_footer}<strong>{i_name}</strong> | 📍 {i_address} | 📞 {i_contact} | 👨‍🏫 <strong>{t_name}</strong></p></div></div>"""
-    padding = "10mm" if is_2_col else "20mm"
     col_style = "column-count: 2; column-gap: 10mm; font-size: 14px;" if is_2_col else "font-size: 16px;"
 
     return f"""<!DOCTYPE html><html><head><style>
-    body {{ background: #f0f0f0; font-family: 'Times New Roman', serif; padding: 20px; display: flex; justify-content: center; }} 
-    .a4-page {{ background: white; width: 210mm; min-height: 297mm; padding: {padding}; box-shadow: 0 0 10px rgba(0,0,0,0.2); position: relative; padding-bottom: 25mm; }} 
+    body {{ background: #f0f0f0; font-family: 'Times New Roman', serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} 
+    .a4-page {{ background: white; width: 210mm; min-height: 297mm; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.2); box-sizing: border-box; }} 
+    table {{ width: 100%; border-collapse: collapse; border: none; }}
+    td {{ border: none; padding: 0; }}
     @media print {{ 
-        body {{ background: white; padding: 0; }} 
-        .a4-page {{ box-shadow: none; width: 100%; padding-bottom: 20mm; }} 
+        body {{ background: white; padding: 0; display: block; }} 
+        .a4-page {{ box-shadow: none; width: 100%; min-height: auto; padding: 0; margin: 0; }} 
         @page {{ size: A4; margin: 10mm; }} 
-        .footer-container {{ position: fixed; bottom: 0; left: 0; width: 100%; background: white; }}
+        /* <tfoot> makes the footer repeat on ALL printed pages */
+        tfoot {{ display: table-footer-group; }}
+        thead {{ display: table-header-group; }}
     }} 
     h1, h2, h3 {{ text-align: center; column-span: all; }} 
     .content-body {{ {col_style} }} 
-    .footer-container {{ text-align: center; margin-top: 20px; }}
-    .footer {{ padding-top: 10px; border-top: 2px dashed #bbb; font-size: 12px; color: #444; display: inline-block; width: 90%; }}
-    </style></head><body><div class="a4-page">{logo_top}<div class="content-body">{html_body}</div>{footer}</div></body></html>"""
+    .footer-content {{ text-align: center; margin-top: 20px; padding-top: 10px; border-top: 2px dashed #bbb; font-size: 13px; color: #444; }}
+    </style></head><body><div class="a4-page">
+    <table>
+        <thead><tr><td>{logo_top}</td></tr></thead>
+        <tbody><tr><td><div class="content-body">{html_body}</div></td></tr></tbody>
+        <tfoot><tr><td>
+            <div class="footer-content">
+                {logo_footer}<strong>{i_name}</strong> | 📍 {i_address} | 📞 {i_contact} | 👨‍🏫 <strong>{t_name}</strong>
+            </div>
+        </td></tr></tfoot>
+    </table>
+    </div></body></html>"""
 
-# ✅ WORD EXPORT
+# 🌟 FIX 1 & 2 (DOCX): Mangal font for Square Box fix + Section Footer logic
 def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
     doc = Document()
     md_content = md_content.replace('\r', '')
     
     style = doc.styles['Normal']
     font = style.font
-    font.name = 'Arial' 
+    # Mangal is natively safe for English + Math + Hindi, preventing square boxes
+    font.name = 'Mangal' 
     font.size = Pt(11)
-    
-    rFonts = style.element.rPr.rFonts
-    if rFonts is not None:
-        rFonts.set(qn('w:cs'), 'Mangal') 
     
     for i in range(3):
         try:
             h_style = doc.styles[f'Heading {i}']
-            h_style.font.name = 'Arial'
-            if h_style.element.rPr.rFonts is not None:
-                h_style.element.rPr.rFonts.set(qn('w:cs'), 'Mangal')
+            h_style.font.name = 'Mangal'
             h_style.font.color.rgb = RGBColor(0, 0, 0)
             if i == 0:
                 h_style.font.size = Pt(16)
@@ -345,8 +356,9 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
                 run = p.add_run(part)
                 if i % 2 == 1: run.bold = True
                 
-    for section in doc.sections:
-        footer = section.footer
+    # Applying footer securely to doc.sections[0] only (will auto-link to all pages)
+    if doc.sections:
+        footer = doc.sections[0].footer
         footer_para = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
         footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
@@ -359,13 +371,13 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
             except Exception: pass
             
         run_name = footer_para.add_run(f"{i_name}  |  ")
-        run_name.font.name = 'Arial'
+        run_name.font.name = 'Mangal'
         run_name.font.size = Pt(10)
         run_name.font.bold = True
         run_name.font.color.rgb = RGBColor(100, 100, 100)
         
         run_rest = footer_para.add_run(f"📍 {i_address}  |  📞 {i_contact}  |  👨‍🏫 {t_name}")
-        run_rest.font.name = 'Arial'
+        run_rest.font.name = 'Mangal'
         run_rest.font.size = Pt(10)
         run_rest.font.color.rgb = RGBColor(100, 100, 100)
             
@@ -397,7 +409,6 @@ with tab_create:
         sub = st.text_input("Subject (PDF)")
 
     st.markdown("---")
-    # 🌟 RESTORED ALL 5 QUESTION TYPES
     st.markdown("### 2. Counts & Marks")
     h1, h2, h3, h4 = st.columns([3, 2, 2, 3])
     h1.write("**Type**"); h2.write("**Count**"); h3.write("**Marks**"); h4.write("**Diff**")
@@ -407,37 +418,36 @@ with tab_create:
     c1.write("MCQs")
     mcq_c = c2.number_input("mcq_c", 0, 50, 5, label_visibility="collapsed", key="m_c")
     mcq_m = c3.number_input("mcq_m", 1, 10, 1, label_visibility="collapsed", key="m_m")
-    mcq_d = c4.selectbox("mcq_d", ["Easy", "Medium", "Hard", "Mixed"], label_visibility="collapsed", key="m_d")
+    mcq_d = c4.selectbox("mcq_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="m_d")
 
     # FIB Row
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     c1.write("Fill in the Blanks")
     fib_c = c2.number_input("fib_c", 0, 20, 3, label_visibility="collapsed", key="f_c")
     fib_m = c3.number_input("fib_m", 1, 10, 1, label_visibility="collapsed", key="f_m")
-    fib_d = c4.selectbox("fib_d", ["Easy", "Medium", "Hard","Mixed" ], label_visibility="collapsed", key="f_d")
+    fib_d = c4.selectbox("fib_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="f_d")
 
     # True/False Row
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     c1.write("True / False")
     tf_c = c2.number_input("tf_c", 0, 20, 3, label_visibility="collapsed", key="t_c")
     tf_m = c3.number_input("tf_m", 1, 10, 1, label_visibility="collapsed", key="t_m")
-    tf_d = c4.selectbox("tf_d", ["Easy", "Medium", "Hard","Mixed" ], label_visibility="collapsed", key="t_d")
+    tf_d = c4.selectbox("tf_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="t_d")
 
     # Short Row
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     c1.write("Short Answer")
     short_c = c2.number_input("sh_c", 0, 20, 3, label_visibility="collapsed", key="s_c")
     short_m = c3.number_input("sh_m", 1, 10, 2, label_visibility="collapsed", key="s_m")
-    short_d = c4.selectbox("sh_d", ["Easy", "Medium", "Hard", "Mixed" ], label_visibility="collapsed", key="s_d", index=1)
+    short_d = c4.selectbox("sh_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="s_d", index=1)
 
     # Long Row
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     c1.write("Long Answer")
     long_c = c2.number_input("l_c", 0, 20, 2, label_visibility="collapsed", key="l_c")
     long_m = c3.number_input("l_m", 1, 20, 5, label_visibility="collapsed", key="l_m")
-    long_d = c4.selectbox("l_d", ["Easy", "Medium", "Hard","Mixed" ], label_visibility="collapsed", key="l_d", index=2)
+    long_d = c4.selectbox("l_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="l_d", index=2)
 
-    # 🌟 CALCULATION FIX FOR ALL 5 TYPES
     total_q = mcq_c + fib_c + tf_c + short_c + long_c
     total_m = (mcq_c * mcq_m) + (fib_c * fib_m) + (tf_c * tf_m) + (short_c * short_m) + (long_c * long_m)
     
@@ -447,19 +457,20 @@ with tab_create:
     if st.button("🚀 Generate Paper", use_container_width=True):
         header = f"# {inst_name}\n**Subject:** {sub} | **Class:** {grade}\n**Marks:** {total_m} | **Time:** {exam_time}\n***"
         
-        # 🌟 PROMPT BUILDER CALL FIX
+        # Now passing the selected paper_language explicitly!
         q_reqs = build_question_prompt(
             mcq_c, mcq_d, mcq_m, 
             fib_c, fib_d, fib_m, 
             tf_c, tf_d, tf_m, 
             short_c, short_d, short_m, 
             long_c, long_d, long_m, 
-            include_answer_key
+            include_answer_key,
+            paper_language  
         )
         
         prompt = f"{header}\n{q_reqs}\nTopics: {syl}"
         
-        with st.spinner("AI is thinking in simple language..."):
+        with st.spinner("Generating Paper..."):
             try:
                 model = genai.GenerativeModel(working_model_name)
                 resp = model.generate_content(prompt)
@@ -471,7 +482,7 @@ with tab_create:
             except Exception as e:
                 error_msg = str(e).lower()
                 if "429" in error_msg or "quota" in error_msg:
-                    st.error("🚨 The daily server limit has been exceeded!")
+                    st.error("🚨 The server's daily limit has been reached!")
                     st.warning("💡 Tip: For uninterrupted paper generation, enter your own free Gemini API Key under 'Advanced Settings' in the sidebar.")
                 elif "api_key_invalid" in error_msg or "api key not valid" in error_msg or "invalid" in error_msg:
                     st.error("❌ The API Key you entered is invalid. Please check and try again.")
