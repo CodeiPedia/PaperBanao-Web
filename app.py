@@ -167,7 +167,6 @@ inst_contact = st.sidebar.text_input("Contact Number", value="+91 9876543210")
 st.sidebar.markdown("---")
 st.sidebar.header("📜 Formatting")
 board_format = st.sidebar.selectbox("Board Pattern", ["Standard", "BSEB (Bihar Board)", "CBSE", "ICSE"])
-# Language selection controls AI Output
 paper_language = st.sidebar.selectbox("Paper Language", ["English", "Hindi", "Bilingual"])
 include_answer_key = st.sidebar.toggle("Include Answer Key", value=True)
 is_two_column = st.sidebar.toggle("📄 Two-Column Format", value=False)
@@ -204,7 +203,6 @@ def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, 
     if short_c > 0: reqs.append(f"- {short_c} Short Q (Diff: {short_d}). [{short_m} Marks each]")
     if long_c > 0:  reqs.append(f"- {long_c} Long Q (Diff: {long_d}). [{long_m} Marks each]")
     
-    # Dynamic Language Rules
     if selected_language == "English":
         lang_instruction = "LANGUAGE RULE: Generate the ENTIRE paper and answers strictly in the English language."
     elif selected_language == "Hindi":
@@ -233,18 +231,22 @@ def clean_math_for_word(text):
     latex_map = {r'\pi': 'π', r'\theta': 'θ', r'\sqrt': '√', r'\times': '×', r'\div': '÷', '$': '', '^2': '²', '^3': '³'}
     for k, v in latex_map.items(): text = text.replace(k, v)
     
-    # Cleanup to prevent square boxes in Word
+    # 🌟 AGGRESSIVE CLEANUP for Word Square Boxes (Tofu Fix) 🌟
     text = text.replace('☐', '[ ]').replace('☑', '[x]')
     text = text.replace('•', '-').replace('◦', '-')
-    text = text.replace('\u200b', '')
+    text = text.replace('\u200b', '') # remove zero width space
+    # Catching all weird AI generated hidden bullets
+    text = text.replace('\u2022', '-') # standard bullet
+    text = text.replace('\u25cf', '-') # another black circle
+    text = text.replace('\u25cb', '-') # white circle
+    text = text.replace('\u25a0', '[ ]') # black square
+    text = text.replace('\u25a1', '[ ]') # white square
     
     return text.strip()
 
-# 🌟 FIX 1 & 2: Perfect Horizontal HTML Header
 def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
     md_content = clean_math_for_word(md_content)
     
-    # Process Logo
     logo_html_inline = ""
     logo_footer = ""
     if inst_logo:
@@ -253,13 +255,10 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
         logo_html_inline = f"<img src='data:{inst_logo.type};base64,{b64}' style='max-height: 45px; margin-right: 15px; vertical-align: middle;'/>"
         logo_footer = f"<img src='data:{inst_logo.type};base64,{b64}' style='height: 18px; vertical-align: middle; margin-right: 8px;'/>"
     
-    # Create the beautiful horizontal header
     custom_header = f"<div style='text-align: center; margin-bottom: 20px; column-span: all; width: 100%;'>{logo_html_inline}<h1 style='display: inline-block; margin: 0; vertical-align: middle;'>{i_name}</h1></div>"
     
-    # 1. Replace first occurrence of Name with Custom Header (For Question Paper)
     md_content = md_content.replace(f"# {i_name}", custom_header, 1)
     
-    # 2. Add Page Break + Custom Header to Answer Key Page
     pb = "<div style='page-break-before: always; column-span: all; width: 100%;'></div>\n\n"
     ans_header = f"{pb}{custom_header}\n\n<h2 style='text-align: center; column-span: all;'>Answer Key</h2>\n\n"
     
@@ -270,7 +269,6 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     html_body = markdown.markdown(md_content)
     col_style = "column-count: 2; column-gap: 10mm; font-size: 14px;" if is_2_col else "font-size: 16px;"
 
-    # Clean HTML layout, ensuring Top Logo doesn't repeat, but footer repeats
     return f"""<!DOCTYPE html><html><head><style>
     body {{ background: #f0f0f0; font-family: 'Times New Roman', serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} 
     .a4-page {{ background: white; width: 210mm; min-height: 297mm; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.2); box-sizing: border-box; }} 
@@ -297,36 +295,31 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     </table>
     </div></body></html>"""
 
-# 🌟 FIX 3: Horizontal Header & Square Box fix in DOCX
 def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
     doc = Document()
     md_content = md_content.replace('\r', '')
     
+    # 🌟 DEEP XML FONT FIX FOR HINDI & ENGLISH MIX 🌟
+    # Assigning Arial for English and mapping Mangal strictly to Complex Script (Hindi)
     style = doc.styles['Normal']
     font = style.font
-    font.name = 'Mangal' 
+    font.name = 'Arial' 
     font.size = Pt(11)
     
-    # Helper to add inline horizontal header in Word
-    def insert_inline_header():
-        p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        if inst_logo is not None:
-            try:
-                inst_logo.seek(0)
-                r_img = p.add_run()
-                r_img.add_picture(inst_logo, height=Inches(0.45))
-                p.add_run("   ") 
-            except Exception: pass
-        r_text = p.add_run(i_name)
-        r_text.font.name = 'Mangal'
-        r_text.font.size = Pt(16)
-        r_text.bold = True
-
+    rFonts = style.element.rPr.rFonts
+    if rFonts is not None:
+        rFonts.set(qn('w:cs'), 'Mangal') 
+        rFonts.set(qn('w:ascii'), 'Arial')
+        rFonts.set(qn('w:hAnsi'), 'Arial')
+    
     for i in range(3):
         try:
             h_style = doc.styles[f'Heading {i}']
-            h_style.font.name = 'Mangal'
+            h_style.font.name = 'Arial'
+            if h_style.element.rPr.rFonts is not None:
+                h_style.element.rPr.rFonts.set(qn('w:cs'), 'Mangal')
+                h_style.element.rPr.rFonts.set(qn('w:ascii'), 'Arial')
+                h_style.element.rPr.rFonts.set(qn('w:hAnsi'), 'Arial')
             h_style.font.color.rgb = RGBColor(0, 0, 0)
             if i == 0:
                 h_style.font.size = Pt(16)
@@ -343,7 +336,21 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         for section in doc.sections:
             section.top_margin = section.bottom_margin = section.left_margin = section.right_margin = Inches(0.4)
 
-    # Insert Header on First Page
+    def insert_inline_header():
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if inst_logo is not None:
+            try:
+                inst_logo.seek(0)
+                r_img = p.add_run()
+                r_img.add_picture(inst_logo, height=Inches(0.45))
+                p.add_run("   ") 
+            except Exception: pass
+        r_text = p.add_run(i_name)
+        # Font name not explicitly set here so it beautifully inherits w:cs (Mangal) from Normal style
+        r_text.font.size = Pt(16)
+        r_text.bold = True
+
     insert_inline_header()
 
     if is_2_col:
@@ -358,13 +365,12 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         if not line_clean: continue
         line_clean = clean_math_for_word(line_clean)
         
-        # Skip the AI text heading since we generated a custom visual one
         if line_clean == f"# {i_name}":
             continue
             
         if "Answer Key" in line_clean or "ANSWER KEY" in line_clean:
             doc.add_page_break() 
-            insert_inline_header() # Logo on front page of Answer Key
+            insert_inline_header() 
             doc.add_heading("Answer Key", level=1)
             continue
             
@@ -394,148 +400,10 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
             except Exception: pass
             
         run_name = footer_para.add_run(f"{i_name}  |  ")
-        run_name.font.name = 'Mangal'
         run_name.font.size = Pt(10)
         run_name.font.bold = True
         run_name.font.color.rgb = RGBColor(100, 100, 100)
         
         run_rest = footer_para.add_run(f"📍 {i_address}  |  📞 {i_contact}  |  👨‍🏫 {t_name}")
-        run_rest.font.name = 'Mangal'
         run_rest.font.size = Pt(10)
-        run_rest.font.color.rgb = RGBColor(100, 100, 100)
-            
-    bio = BytesIO()
-    doc.save(bio)
-    return bio.getvalue()
-
-# ==========================================
-# --- MAIN LAYOUT ---
-# ==========================================
-tab_create, tab_history = st.tabs(["🏠 Create Paper", "🗂️ Cloud History"])
-
-with tab_create:
-    if not is_pro and papers_used >= FREE_LIMIT:
-        st.error("Free Trial Expired! Please Upgrade.")
-        st.stop()
-        
-    st.markdown("### 1. Source")
-    source = st.radio("Method:", ["⚡ Quick", "📄 PDF Extract"], horizontal=True, label_visibility="collapsed")
-
-    sub, grade, syl, up_pdf = "", "", "", None
-    if source == "⚡ Quick":
-        c1, c2 = st.columns(2)
-        sub = c1.text_input("Subject")
-        grade = c2.text_input("Class")
-        syl = st.text_area("Topics")
-    else:
-        up_pdf = st.file_uploader("Upload PDF", type="pdf")
-        sub = st.text_input("Subject (PDF)")
-
-    st.markdown("---")
-    st.markdown("### 2. Counts & Marks")
-    h1, h2, h3, h4 = st.columns([3, 2, 2, 3])
-    h1.write("**Type**"); h2.write("**Count**"); h3.write("**Marks**"); h4.write("**Diff**")
-
-    # MCQ Row
-    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    c1.write("MCQs")
-    mcq_c = c2.number_input("mcq_c", 0, 50, 5, label_visibility="collapsed", key="m_c")
-    mcq_m = c3.number_input("mcq_m", 1, 10, 1, label_visibility="collapsed", key="m_m")
-    mcq_d = c4.selectbox("mcq_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="m_d")
-
-    # FIB Row
-    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    c1.write("Fill in the Blanks")
-    fib_c = c2.number_input("fib_c", 0, 20, 3, label_visibility="collapsed", key="f_c")
-    fib_m = c3.number_input("fib_m", 1, 10, 1, label_visibility="collapsed", key="f_m")
-    fib_d = c4.selectbox("fib_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="f_d")
-
-    # True/False Row
-    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    c1.write("True / False")
-    tf_c = c2.number_input("tf_c", 0, 20, 3, label_visibility="collapsed", key="t_c")
-    tf_m = c3.number_input("tf_m", 1, 10, 1, label_visibility="collapsed", key="t_m")
-    tf_d = c4.selectbox("tf_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="t_d")
-
-    # Short Row
-    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    c1.write("Short Answer")
-    short_c = c2.number_input("sh_c", 0, 20, 3, label_visibility="collapsed", key="s_c")
-    short_m = c3.number_input("sh_m", 1, 10, 2, label_visibility="collapsed", key="s_m")
-    short_d = c4.selectbox("sh_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="s_d", index=1)
-
-    # Long Row
-    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    c1.write("Long Answer")
-    long_c = c2.number_input("l_c", 0, 20, 2, label_visibility="collapsed", key="l_c")
-    long_m = c3.number_input("l_m", 1, 20, 5, label_visibility="collapsed", key="l_m")
-    long_d = c4.selectbox("l_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="l_d", index=2)
-
-    total_q = mcq_c + fib_c + tf_c + short_c + long_c
-    total_m = (mcq_c * mcq_m) + (fib_c * fib_m) + (tf_c * tf_m) + (short_c * short_m) + (long_c * long_m)
-    
-    st.markdown("---")
-    st.info(f"📊 Total Questions: {total_q} | 🏆 Maximum Marks: {total_m}")
-
-    if st.button("🚀 Generate Paper", use_container_width=True):
-        header = f"# {inst_name}\n**Subject:** {sub} | **Class:** {grade}\n**Marks:** {total_m} | **Time:** {exam_time}\n***"
-        
-        q_reqs = build_question_prompt(
-            mcq_c, mcq_d, mcq_m, 
-            fib_c, fib_d, fib_m, 
-            tf_c, tf_d, tf_m, 
-            short_c, short_d, short_m, 
-            long_c, long_d, long_m, 
-            include_answer_key,
-            paper_language  
-        )
-        
-        prompt = f"{header}\n{q_reqs}\nTopics: {syl}"
-        
-        with st.spinner("Generating Paper..."):
-            try:
-                model = genai.GenerativeModel(working_model_name)
-                resp = model.generate_content(prompt)
-                blocks = resp.text.split("|||")
-                st.session_state.blocks = [{'id': str(uuid.uuid4()), 'text': b.strip()} for b in blocks if b.strip()]
-                st.session_state.file_name = f"{sub}_Paper"
-                update_paper_count(st.session_state.username)
-                st.rerun()
-            except Exception as e:
-                error_msg = str(e).lower()
-                if "429" in error_msg or "quota" in error_msg:
-                    st.error("🚨 The server's daily limit has been reached!")
-                    st.warning("💡 Tip: For uninterrupted paper generation, enter your own free Gemini API Key under 'Advanced Settings' in the sidebar.")
-                elif "api_key_invalid" in error_msg or "api key not valid" in error_msg or "invalid" in error_msg:
-                    st.error("❌ The API Key you entered is invalid. Please check and try again.")
-                else:
-                    st.error(f"Error: {e}")
-
-    if st.session_state.blocks:
-        st.markdown("---")
-        with st.expander("🛠️ Edit Questions"):
-            for i, b in enumerate(st.session_state.blocks):
-                st.session_state.blocks[i]['text'] = st.text_area(f"Block {i}", b['text'], height=100)
-        
-        paper_md = "\n\n".join([b['text'] for b in st.session_state.blocks])
-        f_html = create_a4_html(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
-        f_word = create_word_docx(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
-        
-        c1, c2, c3 = st.columns(3)
-        c1.download_button("🖨️ HTML", f_html, f"{sub}.html", "text/html")
-        c2.download_button("📄 Word", f_word, f"{sub}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-        if c3.button("☁️ Save History"):
-            data = {"username": st.session_state.username, "date": datetime.now().strftime("%Y-%m-%d"), "subject": sub, "board": board_format, "content": paper_md}
-            supabase.table("papers").insert(data).execute()
-            st.success("Saved!")
-
-with tab_history:
-    st.markdown("### Cloud History")
-    res = supabase.table("papers").select("*").eq("username", st.session_state.username).order("id", desc=True).execute()
-    if res.data:
-        for p in res.data:
-            with st.expander(f"📄 {p['subject']} ({p['date']})"):
-                h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
-                st.download_button("Download HTML", h_html, f"History_{p['id']}.html", "text/html", key=f"h_{p['id']}")
-                if st.button("Delete", key=f"d_{p['id']}"):
-                    delete_paper(p['id']); st.rerun()
+        run_rest.font.color.rgb = RGBColor(100, 100, 1
