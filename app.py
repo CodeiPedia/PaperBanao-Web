@@ -407,3 +407,139 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         run_rest = footer_para.add_run(f"📍 {i_address}  |  📞 {i_contact}  |  👨‍🏫 {t_name}")
         run_rest.font.size = Pt(10)
         run_rest.font.color.rgb = RGBColor(100, 100, 1)
+        bio = BytesIO()
+    doc.save(bio)
+    return bio.getvalue()
+
+# ==========================================
+# --- MAIN LAYOUT ---
+# ==========================================
+tab_create, tab_history = st.tabs(["🏠 Create Paper", "🗂️ Cloud History"])
+
+with tab_create:
+    if not is_pro and papers_used >= FREE_LIMIT:
+        st.error("Free Trial Expired! Please Upgrade.")
+        st.stop()
+        
+    st.markdown("### 1. Source")
+    source = st.radio("Method:", ["⚡ Quick", "📄 PDF Extract"], horizontal=True, label_visibility="collapsed")
+
+    sub, grade, syl, up_pdf = "", "", "", None
+    if source == "⚡ Quick":
+        c1, c2 = st.columns(2)
+        sub = c1.text_input("Subject")
+        grade = c2.text_input("Class")
+        syl = st.text_area("Topics")
+    else:
+        up_pdf = st.file_uploader("Upload PDF", type="pdf")
+        sub = st.text_input("Subject (PDF)")
+
+    st.markdown("---")
+    st.markdown("### 2. Counts & Marks")
+    h1, h2, h3, h4 = st.columns([3, 2, 2, 3])
+    h1.write("**Type**"); h2.write("**Count**"); h3.write("**Marks**"); h4.write("**Diff**")
+
+    # MCQ Row
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
+    c1.write("MCQs")
+    mcq_c = c2.number_input("mcq_c", 0, 50, 5, label_visibility="collapsed", key="m_c")
+    mcq_m = c3.number_input("mcq_m", 1, 10, 1, label_visibility="collapsed", key="m_m")
+    mcq_d = c4.selectbox("mcq_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="m_d")
+
+    # FIB Row
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
+    c1.write("Fill in the Blanks")
+    fib_c = c2.number_input("fib_c", 0, 20, 3, label_visibility="collapsed", key="f_c")
+    fib_m = c3.number_input("fib_m", 1, 10, 1, label_visibility="collapsed", key="f_m")
+    fib_d = c4.selectbox("fib_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="f_d")
+
+    # True/False Row
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
+    c1.write("True / False")
+    tf_c = c2.number_input("tf_c", 0, 20, 3, label_visibility="collapsed", key="t_c")
+    tf_m = c3.number_input("tf_m", 1, 10, 1, label_visibility="collapsed", key="t_m")
+    tf_d = c4.selectbox("tf_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="t_d")
+
+    # Short Row
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
+    c1.write("Short Answer")
+    short_c = c2.number_input("sh_c", 0, 20, 3, label_visibility="collapsed", key="s_c")
+    short_m = c3.number_input("sh_m", 1, 10, 2, label_visibility="collapsed", key="s_m")
+    short_d = c4.selectbox("sh_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="s_d", index=1)
+
+    # Long Row
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
+    c1.write("Long Answer")
+    long_c = c2.number_input("l_c", 0, 20, 2, label_visibility="collapsed", key="l_c")
+    long_m = c3.number_input("l_m", 1, 20, 5, label_visibility="collapsed", key="l_m")
+    long_d = c4.selectbox("l_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="l_d", index=2)
+
+    total_q = mcq_c + fib_c + tf_c + short_c + long_c
+    total_m = (mcq_c * mcq_m) + (fib_c * fib_m) + (tf_c * tf_m) + (short_c * short_m) + (long_c * long_m)
+    
+    st.markdown("---")
+    st.info(f"📊 Total Questions: {total_q} | 🏆 Maximum Marks: {total_m}")
+
+    if st.button("🚀 Generate Paper", use_container_width=True):
+        header = f"# {inst_name}\n**Subject:** {sub} | **Class:** {grade}\n**Marks:** {total_m} | **Time:** {exam_time}\n***"
+        
+        q_reqs = build_question_prompt(
+            mcq_c, mcq_d, mcq_m, 
+            fib_c, fib_d, fib_m, 
+            tf_c, tf_d, tf_m, 
+            short_c, short_d, short_m, 
+            long_c, long_d, long_m, 
+            include_answer_key,
+            paper_language  
+        )
+        
+        prompt = f"{header}\n{q_reqs}\nTopics: {syl}"
+        
+        with st.spinner("Generating Paper..."):
+            try:
+                model = genai.GenerativeModel(working_model_name)
+                resp = model.generate_content(prompt)
+                blocks = resp.text.split("|||")
+                st.session_state.blocks = [{'id': str(uuid.uuid4()), 'text': b.strip()} for b in blocks if b.strip()]
+                st.session_state.file_name = f"{sub}_Paper"
+                update_paper_count(st.session_state.username)
+                st.rerun()
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "429" in error_msg or "quota" in error_msg:
+                    st.error("🚨 The server's daily limit has been reached!")
+                    st.warning("💡 Tip: For uninterrupted paper generation, enter your own free Gemini API Key under 'Advanced Settings' in the sidebar.")
+                elif "api_key_invalid" in error_msg or "api key not valid" in error_msg or "invalid" in error_msg:
+                    st.error("❌ The API Key you entered is invalid. Please check and try again.")
+                else:
+                    st.error(f"Error: {e}")
+
+    if st.session_state.blocks:
+        st.markdown("---")
+        with st.expander("🛠️ Edit Questions"):
+            for i, b in enumerate(st.session_state.blocks):
+                st.session_state.blocks[i]['text'] = st.text_area(f"Block {i}", b['text'], height=100)
+        
+        paper_md = "\n\n".join([b['text'] for b in st.session_state.blocks])
+        f_html = create_a4_html(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
+        f_word = create_word_docx(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
+        
+        c1, c2, c3 = st.columns(3)
+        c1.download_button("🖨️ HTML", f_html, f"{sub}.html", "text/html")
+        c2.download_button("📄 Word", f_word, f"{sub}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        if c3.button("☁️ Save History"):
+            data = {"username": st.session_state.username, "date": datetime.now().strftime("%Y-%m-%d"), "subject": sub, "board": board_format, "content": paper_md}
+            supabase.table("papers").insert(data).execute()
+            st.success("Saved!")
+
+with tab_history:
+    st.markdown("### Cloud History")
+    res = supabase.table("papers").select("*").eq("username", st.session_state.username).order("id", desc=True).execute()
+    if res.data:
+        for p in res.data:
+            with st.expander(f"📄 {p['subject']} ({p['date']})"):
+                h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
+                st.download_button("Download HTML", h_html, f"History_{p['id']}.html", "text/html", key=f"h_{p['id']}")
+                if st.button("Delete", key=f"d_{p['id']}"):
+                    delete_paper(p['id']); st.rerun()
+
