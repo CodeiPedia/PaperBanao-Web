@@ -182,10 +182,10 @@ try:
     flash_models = [m for m in valid_models if '1.5-flash' in m]
     working_model_name = flash_models[0] if flash_models else valid_models[0]
 except Exception as e: 
-    working_model_name = "models/gemini-1.5-flash-latest"
+    # 🌟 FIX: Updated to the new, stable model name
+    working_model_name = "gemini-1.5-flash" 
     if user_api_key:
         st.sidebar.error("❌ Invalid API Key. Please check your entry.")
-
 # --- Helper Functions ---
 def extract_text_from_pdf(uploaded_file, start_page, end_page):
     try:
