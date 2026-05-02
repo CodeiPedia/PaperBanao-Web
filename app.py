@@ -244,6 +244,7 @@ def clean_math_for_word(text):
     
     return text.strip()
 
+# ✅ HTML EXPORT (Fixed to force logo at the absolute top)
 def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
     md_content = clean_math_for_word(md_content)
     
@@ -257,7 +258,8 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     
     custom_header = f"<div style='text-align: center; margin-bottom: 20px; column-span: all; width: 100%;'>{logo_html_inline}<h1 style='display: inline-block; margin: 0; vertical-align: middle;'>{i_name}</h1></div>"
     
-    md_content = md_content.replace(f"# {i_name}", custom_header, 1)
+    # 🌟 FIX 1: Safely remove the AI-generated plain text name (with or without # or **)
+    md_content = re.sub(rf"^#?\s*\**{re.escape(i_name)}\**", "", md_content, count=1, flags=re.IGNORECASE).strip()
     
     pb = "<div style='page-break-before: always; column-span: all; width: 100%;'></div>\n\n"
     ans_header = f"{pb}{custom_header}\n\n<h2 style='text-align: center; column-span: all;'>Answer Key</h2>\n\n"
@@ -266,7 +268,9 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     md_content = md_content.replace("## Answer Key", ans_header)
     md_content = md_content.replace("# ANSWER KEY", ans_header)
     
-    html_body = markdown.markdown(md_content)
+    # 🌟 FIX 2: Force the custom header at the very top of the body
+    html_body = custom_header + "\n" + markdown.markdown(md_content)
+    
     col_style = "column-count: 2; column-gap: 10mm; font-size: 14px;" if is_2_col else "font-size: 16px;"
 
     return f"""<!DOCTYPE html><html><head><style>
@@ -295,12 +299,12 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     </table>
     </div></body></html>"""
 
+
+# ✅ WORD EXPORT (Fixed to smartly skip AI text)
 def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
     doc = Document()
     md_content = md_content.replace('\r', '')
     
-    # 🌟 DEEP XML FONT FIX FOR HINDI & ENGLISH MIX 🌟
-    # Assigning Arial for English and mapping Mangal strictly to Complex Script (Hindi)
     style = doc.styles['Normal']
     font = style.font
     font.name = 'Arial' 
@@ -347,7 +351,6 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
                 p.add_run("   ") 
             except Exception: pass
         r_text = p.add_run(i_name)
-        # Font name not explicitly set here so it beautifully inherits w:cs (Mangal) from Normal style
         r_text.font.size = Pt(16)
         r_text.bold = True
 
@@ -365,7 +368,9 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         if not line_clean: continue
         line_clean = clean_math_for_word(line_clean)
         
-        if line_clean == f"# {i_name}":
+        # 🌟 FIX 3: Smarter check to skip the AI's plain text header
+        clean_header_check = line_clean.replace('#', '').replace('*', '').strip()
+        if clean_header_check.lower() == i_name.lower():
             continue
             
         if "Answer Key" in line_clean or "ANSWER KEY" in line_clean:
@@ -400,14 +405,17 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
             except Exception: pass
             
         run_name = footer_para.add_run(f"{i_name}  |  ")
+        run_name.font.name = 'Mangal'
         run_name.font.size = Pt(10)
         run_name.font.bold = True
         run_name.font.color.rgb = RGBColor(100, 100, 100)
         
         run_rest = footer_para.add_run(f"📍 {i_address}  |  📞 {i_contact}  |  👨‍🏫 {t_name}")
+        run_rest.font.name = 'Mangal'
         run_rest.font.size = Pt(10)
-        run_rest.font.color.rgb = RGBColor(100, 100, 1)
-        bio = BytesIO()
+        run_rest.font.color.rgb = RGBColor(100, 100, 100)
+            
+    bio = BytesIO()
     doc.save(bio)
     return bio.getvalue()
 
