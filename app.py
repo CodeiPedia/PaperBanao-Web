@@ -246,9 +246,10 @@ def clean_math_for_word(text):
 
 # ✅ HTML EXPORT (Fixed to force logo at the absolute top)
 # 🌟 STEP 1: NEW HTML FUNCTION (Professional Header & Vertical Line)
+# 🌟 STEP 1: NEW HTML FUNCTION (Professional Header & Vertical Line)
 def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
     md_content = clean_math_for_word(md_content)
-    
+
     logo_html_inline = ""
     logo_footer = ""
     if inst_logo:
@@ -256,19 +257,19 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
         b64 = base64.b64encode(inst_logo.getvalue()).decode()
         logo_html_inline = f"<img src='data:{inst_logo.type};base64,{b64}' style='max-height: 60px; margin-right: 15px; vertical-align: middle;'/>"
         logo_footer = f"<img src='data:{inst_logo.type};base64,{b64}' style='height: 18px; vertical-align: middle; margin-right: 8px;'/>"
-    
+
     # AI के बनाये सादे हेडर में से जानकारी निकालना (Extracting info)
     sub_match = re.search(r'\*\*Subject:\*\*\s*(.*?)\s*\|', md_content)
     class_match = re.search(r'\*\*Class:\*\*\s*(.*?)\n', md_content)
     marks_match = re.search(r'\*\*Marks:\*\*\s*(.*?)\s*\|', md_content)
     time_match = re.search(r'\*\*Time:\*\*\s*(.*?)\n', md_content)
-    
+
     sub_text = sub_match.group(1) if sub_match else "Mathematics"
     class_text = class_match.group(1) if class_match else "10th"
     marks_text = marks_match.group(1) if marks_match else "100"
     time_text = time_match.group(1) if time_match else "3 Hrs"
 
-    # आपकी इमेज जैसा शानदार Professional Header 
+    # आपकी इमेज जैसा शानदार Professional Header
     custom_header = f"""
     <div style='border: 2px solid black; padding: 10px; margin-bottom: 20px; width: 100%; box-sizing: border-box;'>
         <table style='width: 100%; border-collapse: collapse;'>
@@ -296,37 +297,37 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     </div>
     <h2 style='text-align: center; text-decoration: underline; margin-bottom: 20px; text-transform: uppercase;'>{sub_text}</h2>
     """
-    
+
     # AI के पुराने सादे हेडर को हटाना
     md_content = re.sub(r"^#.*?\*\*\*", "", md_content, count=1, flags=re.DOTALL).strip()
-    
+
     pb = "<div style='page-break-before: always; column-span: all; width: 100%;'></div>\n\n"
     ans_header = f"{pb}{custom_header}\n\n<h2 style='text-align: center; column-span: all;'>Answer Key</h2>\n\n"
-    
+
     md_content = md_content.replace("# Answer Key", ans_header)
     md_content = md_content.replace("## Answer Key", ans_header)
     md_content = md_content.replace("# ANSWER KEY", ans_header)
-    
+
     html_body = custom_header + "\n" + markdown.markdown(md_content)
-    
+
     # 🌟 बीच की लाइन (column-rule) का जादू 🌟
     col_style = "column-count: 2; column-gap: 15mm; column-rule: 1px solid #000; font-size: 14px;" if is_2_col else "font-size: 16px;"
 
     return f"""<!DOCTYPE html><html><head><style>
-    body {{ background: #f0f0f0; font-family: 'Times New Roman', serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} 
-    .a4-page {{ background: white; width: 210mm; min-height: 297mm; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.2); box-sizing: border-box; position: relative; overflow: hidden; }} 
+    body {{ background: #f0f0f0; font-family: 'Times New Roman', serif; margin: 0; padding: 20px; display: flex; justify-content: center; }}
+    .a4-page {{ background: white; width: 210mm; min-height: 297mm; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.2); box-sizing: border-box; position: relative; overflow: hidden; }}
     /* Watermark CSS */
     .watermark {{ position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 80px; color: rgba(0, 0, 0, 0.05); z-index: 0; pointer-events: none; white-space: nowrap; font-weight: bold; }}
     table {{ width: 100%; border-collapse: collapse; border: none; position: relative; z-index: 1; }}
     td {{ border: none; padding: 0; }}
-    @media print {{ 
-        body {{ background: white; padding: 0; display: block; }} 
-        .a4-page {{ box-shadow: none; width: 100%; min-height: auto; padding: 0; margin: 0; page-break-after: always; }} 
-        @page {{ size: A4; margin: 10mm; }} 
+    @media print {{
+        body {{ background: white; padding: 0; display: block; }}
+        .a4-page {{ box-shadow: none; width: 100%; min-height: auto; padding: 0; margin: 0; page-break-after: always; }}
+        @page {{ size: A4; margin: 10mm; }}
         tfoot {{ display: table-footer-group; }}
-    }} 
-    h1, h2, h3 {{ text-align: center; column-span: all; }} 
-    .content-body {{ {col_style} position: relative; z-index: 1; text-align: justify; }} 
+    }}
+    h1, h2, h3 {{ text-align: center; column-span: all; }}
+    .content-body {{ {col_style} position: relative; z-index: 1; text-align: justify; }}
     .footer-content {{ text-align: center; margin-top: 20px; padding-top: 10px; border-top: 2px dashed #bbb; font-size: 13px; color: #444; position: relative; z-index: 1; }}
     </style></head><body><div class="a4-page">
     <div class="watermark">{i_name}</div>
