@@ -146,6 +146,7 @@ else:
         st.sidebar.error("⚠️ Free Trial Expired!")
 
 st.sidebar.markdown("---")
+# BYOK Feature
 st.sidebar.header("⚙️ Advanced Settings")
 st.sidebar.write("Use your own free Gemini API Key when the server limit is reached.")
 user_api_key = st.sidebar.text_input("Your Gemini API Key (Optional)", type="password", help="Get your free key from Google AI Studio")
@@ -161,16 +162,16 @@ exam_time = st.sidebar.text_input("Exam Time", value="2 Hours")
 
 st.sidebar.markdown("---")
 st.sidebar.header("🏢 Footer Details")
-teacher_name = st.sidebar.text_input("Teacher Name", value="Mr. Suraj")
+teacher_name = st.sidebar.text_input("Teacher Name", value="Mr. Sharma")
 inst_address = st.sidebar.text_input("Institute Address", value="123 Education Lane, City")
-inst_contact = st.sidebar.text_input("Contact Number", value="+91 9310038172")
+inst_contact = st.sidebar.text_input("Contact Number", value="+91 9876543210")
 
 st.sidebar.markdown("---")
 st.sidebar.header("📜 Formatting")
 board_format = st.sidebar.selectbox("Board Pattern", ["Standard", "BSEB (Bihar Board)", "CBSE", "ICSE"])
 paper_language = st.sidebar.selectbox("Paper Language", ["English", "Hindi", "Bilingual"])
 include_answer_key = st.sidebar.toggle("Include Answer Key", value=True)
-is_two_column = st.sidebar.toggle("📄 Two-Column Format", value=True)
+is_two_column = st.sidebar.toggle("📄 Two-Column Format", value=True) 
 
 # ==========================================
 # --- API CONFIGURATION LOGIC ---
@@ -258,8 +259,7 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
         logo_html_inline = f"<td style='width: 1%; padding-right: 15px; vertical-align: middle;'><img src='data:{inst_logo.type};base64,{b64}' style='max-height: 55px;'/></td>"
         logo_footer = f"<img src='data:{inst_logo.type};base64,{b64}' style='height: 18px; vertical-align: middle; margin-right: 8px;'/>"
     
-    # Using 'topics' variable if provided, otherwise fallback to 'sub'
-    main_heading_text = topics.strip() if topics.strip() != "" else sub
+    main_heading_text = topics.strip().upper() if topics.strip() != "" else sub.upper()
     
     custom_header = f"""
     <div style='border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 10px; width: 100%;'>
@@ -440,7 +440,6 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         pt.alignment = WD_ALIGN_PARAGRAPH.CENTER
         pt.runs[0].bold = True
         
-        # 🌟 FIX: Topics used as main heading below the line
         main_heading_text = topics.strip().upper() if topics.strip() != "" else sub.upper()
         ptopics = doc.add_paragraph(main_heading_text)
         ptopics.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -521,7 +520,7 @@ with tab_create:
     source = st.radio("Method:", ["⚡ Quick", "📄 PDF Extract"], horizontal=True, label_visibility="collapsed")
 
     sub, grade, syl, up_pdf = "", "", "", None
-    pdf_text = "" # Variable to store extracted text
+    pdf_text = ""
 
     if source == "⚡ Quick":
         c1, c2 = st.columns(2)
@@ -529,7 +528,6 @@ with tab_create:
         grade = c2.text_input("Class")
         syl = st.text_area("Topics")
     else:
-        # 🌟 FIX: Added Class, Topics, and Page Range for PDF Method
         c1, c2 = st.columns(2)
         sub = c1.text_input("Subject (PDF)")
         grade = c2.text_input("Class (PDF)")
@@ -542,7 +540,6 @@ with tab_create:
         end_p = c4.number_input("End Page", min_value=1, value=5)
         
         if up_pdf is not None:
-            # Extract text from the selected pages
             pdf_text = extract_text_from_pdf(up_pdf, start_p, end_p)
             st.success(f"Extracted {len(pdf_text)} characters from pages {start_p} to {end_p}.")
 
@@ -592,7 +589,7 @@ with tab_create:
     st.markdown("---")
     st.info(f"📊 Total Questions: {total_q} | 🏆 Maximum Marks: {total_m}")
 
-   if st.button("🚀 Generate Paper", use_container_width=True):
+    if st.button("🚀 Generate Paper", use_container_width=True):
         st.session_state.current_subject = sub
         st.session_state.current_class = grade
         st.session_state.current_marks = str(total_m)
@@ -601,7 +598,6 @@ with tab_create:
             mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answer_key, paper_language, sub
         )
         
-        # 🌟 FIX: Include PDF text in the prompt if PDF method is selected
         if source == "📄 PDF Extract" and pdf_text != "":
             prompt = f"Subject: {sub}\nClass: {grade}\nTopics: {syl}\n\n{q_reqs}\n\nIMPORTANT: Start directly with the questions. DO NOT generate any Title, Institute Name, Time, or Marks at the top.\n\nCREATE QUESTIONS STRICTLY FROM THE FOLLOWING TEXT EXTRACTED FROM A BOOK:\n\n{pdf_text}"
         else:
