@@ -239,7 +239,7 @@ def clean_math_for_word(text):
     text = text.replace('\u25a0', '[ ]').replace('\u25a1', '[ ]')
     return text.strip()
 
-# 🌟 HTML RENDERER (Cleaned up, strict data injection) 🌟
+# 🌟 100% PERFECT CHATE-STYLE HTML (Header Fixed) 🌟
 def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False, sub="Subject", grade="Class", total_m="Marks", exam_time="Time"):
     md_content = clean_math_for_word(md_content)
     
@@ -256,36 +256,35 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     if inst_logo:
         inst_logo.seek(0)
         b64 = base64.b64encode(inst_logo.getvalue()).decode()
-        # Adjusted padding so it sits perfectly next to text
         logo_html_inline = f"<td style='width: 1%; padding-right: 15px; vertical-align: middle;'><img src='data:{inst_logo.type};base64,{b64}' style='max-height: 55px;'/></td>"
         logo_footer = f"<img src='data:{inst_logo.type};base64,{b64}' style='height: 18px; vertical-align: middle; margin-right: 8px;'/>"
     
+    # 🌟 FIX: Name in one line & Class/Time level with Sub/Marks
     custom_header = f"""
     <div style='border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 10px; width: 100%;'>
-        <table style='width: 100%; border-collapse: collapse; border: none;'>
+        <table style='width: 100%; border-collapse: collapse; border: none; margin-bottom: 10px;'>
             <tr>
-                <td style='width: 25%; text-align: left; vertical-align: top; border: none;'></td>
-                <td style='width: 50%; text-align: center; vertical-align: top; border: none;'>
+                <td style='text-align: center; vertical-align: middle; border: none;'>
                     <table style='margin: 0 auto;'>
                         <tr>
                             {logo_html_inline}
                             <td style='vertical-align: middle;'>
-                                <h1 style='margin: 0; font-size: 26px; font-family: "Times New Roman", serif; font-weight: 900; text-transform: uppercase;'>{i_name}</h1>
+                                <h1 style='margin: 0; font-size: 24px; font-family: "Times New Roman", serif; font-weight: 900; text-transform: uppercase; white-space: nowrap;'>{i_name}</h1>
                             </td>
                         </tr>
                     </table>
-                    <div style='border: 2px solid black; border-radius: 12px; display: inline-block; padding: 4px 25px; font-weight: bold; font-size: 14px; margin-top: 5px; background: white;'>
-                        EXAMINATION
-                    </div>
-                </td>
-                <td style='width: 25%; text-align: right; vertical-align: top; font-weight: bold; font-size: 13px; border: none;'>
-                    Sub.: {sub}<br>Marks: {total_m}
                 </td>
             </tr>
         </table>
-        <table style='width: 100%; font-weight: bold; font-size: 13px; margin-top: -20px; border: none;'>
+        <table style='width: 100%; font-weight: bold; font-size: 13px; border: none;'>
             <tr>
-                <td style='text-align: left; border: none;'>Class : {grade}<br>Time : {exam_time}</td>
+                <td style='text-align: left; vertical-align: bottom; width: 33%; border: none;'>Class : {grade}<br>Time : {exam_time}</td>
+                <td style='text-align: center; vertical-align: middle; width: 34%; border: none;'>
+                    <div style='border: 2px solid black; border-radius: 12px; display: inline-block; padding: 4px 25px; font-weight: bold; font-size: 14px; background: white;'>
+                        EXAMINATION
+                    </div>
+                </td>
+                <td style='text-align: right; vertical-align: bottom; width: 33%; border: none;'>Sub.: {sub}<br>Marks: {total_m}</td>
             </tr>
         </table>
     </div>
@@ -346,7 +345,7 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     </table>
     </div></body></html>"""
 
-# 🌟 WORD RENDERER 🌟
+# 🌟 WORD RENDERER (Header Fixed) 🌟
 def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False, sub="Subject", grade="Class", total_m="Marks", exam_time="Time"):
     doc = Document()
     
@@ -396,13 +395,9 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
             section.top_margin = section.bottom_margin = section.left_margin = section.right_margin = Inches(0.4)
 
     def insert_chate_header():
-        table = doc.add_table(rows=2, cols=3)
-        table.autofit = False
-        for cell in table.columns[0].cells: cell.width = Inches(1.5)
-        for cell in table.columns[1].cells: cell.width = Inches(4.0)
-        for cell in table.columns[2].cells: cell.width = Inches(1.5)
-        
-        p1 = table.cell(0,1).paragraphs[0]
+        # Title Table (Logo + Name)
+        title_table = doc.add_table(rows=1, cols=1)
+        p1 = title_table.cell(0,0).paragraphs[0]
         p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
         if inst_logo is not None:
@@ -417,22 +412,30 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         r1.bold = True
         r1.font.size = Pt(18)
         
-        p2 = table.cell(0,2).paragraphs[0]
+        # Details Table (Class/Time & Sub/Marks)
+        details_table = doc.add_table(rows=1, cols=3)
+        details_table.autofit = False
+        for cell in details_table.columns[0].cells: cell.width = Inches(2.0)
+        for cell in details_table.columns[1].cells: cell.width = Inches(3.0)
+        for cell in details_table.columns[2].cells: cell.width = Inches(2.0)
+
+        p3 = details_table.cell(0,0).paragraphs[0]
+        p3.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        r3 = p3.add_run(f"Class : {grade}\nTime : {exam_time}")
+        r3.bold = True
+        r3.font.size = Pt(10)
+
+        p4 = details_table.cell(0,1).paragraphs[0]
+        p4.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r4 = p4.add_run("\n[ EXAMINATION ]")
+        r4.bold = True
+        r4.font.size = Pt(12)
+
+        p2 = details_table.cell(0,2).paragraphs[0]
         p2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         r2 = p2.add_run(f"Sub.: {sub}\nMarks: {total_m}")
         r2.bold = True
         r2.font.size = Pt(10)
-        
-        p3 = table.cell(1,0).paragraphs[0]
-        r3 = p3.add_run(f"Class : {grade}\nTime : {exam_time}")
-        r3.bold = True
-        r3.font.size = Pt(10)
-        
-        p4 = table.cell(1,1).paragraphs[0]
-        p4.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r4 = p4.add_run("[ EXAMINATION ]")
-        r4.bold = True
-        r4.font.size = Pt(12)
         
         doc.add_paragraph("__________________________________________________________________________").alignment = WD_ALIGN_PARAGRAPH.CENTER
         pt = doc.add_paragraph("MULTIPLE CHOICE QUESTIONS & THEORY")
@@ -497,7 +500,6 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
     bio = BytesIO()
     doc.save(bio)
     return bio.getvalue()
-
 # ==========================================
 # --- MAIN LAYOUT ---
 # ==========================================
