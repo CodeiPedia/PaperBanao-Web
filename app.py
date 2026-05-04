@@ -76,6 +76,8 @@ if "username" not in st.session_state: st.session_state.username = ""
 if "blocks" not in st.session_state: st.session_state.blocks = [] 
 if "file_name" not in st.session_state: st.session_state.file_name = "PaperBanao_Exam"
 if "current_subject" not in st.session_state: st.session_state.current_subject = "Unknown Subject"
+if "current_class" not in st.session_state: st.session_state.current_class = ""
+if "current_marks" not in st.session_state: st.session_state.current_marks = ""
 
 # ==========================================
 # --- 🔐 LOGIN & SIGNUP UI ---
@@ -238,19 +240,16 @@ def clean_math_for_word(text):
     return text.strip()
 
 # 🌟 100% PERFECT CHATE-STYLE HTML 🌟
-def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
-    # Hidden Metadata Extraction (100% reliable)
-    meta_match = re.search(r'\|\|META\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|\|', md_content)
-    if meta_match:
-        sub = meta_match.group(1)
-        grade = meta_match.group(2)
-        total_m = meta_match.group(3)
-        exam_time = meta_match.group(4)
-        md_content = md_content.replace(meta_match.group(0), "").strip()
-    else:
-        sub, grade, total_m, exam_time = "Subject", "Class", "Marks", "Time"
-
+def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False, sub="Subject", grade="Class", total_m="Marks", exam_time="Time"):
     md_content = clean_math_for_word(md_content)
+    
+    # Remove ANY accidental headers AI might have generated
+    md_content = re.sub(r"^#.*?\*\*\*", "", md_content, count=1, flags=re.DOTALL).strip()
+    md_content = re.sub(r"^\*\*Subject:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
+    md_content = re.sub(r"^\*\*Class:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
+    md_content = re.sub(r"^\*\*Marks:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
+    md_content = re.sub(r"^\*\*Time:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
+    md_content = md_content.strip()
     
     logo_html_inline = ""
     logo_footer = ""
@@ -319,7 +318,7 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     td {{ border: none; padding: 0; }}
     @media print {{ 
         body {{ background: white; padding: 0; display: block; }} 
-        .a4-page {{ box-shadow: none; width: 100%; min-height: auto; padding: 0; margin: 0; }} 
+        .a4-page {{ box-shadow: none; width: 100%; min-height: auto; padding: 0; margin: 0; page-break-after: always; }} 
         @page {{ size: A4; margin: 10mm; }} 
         tfoot {{ display: table-footer-group; }}
     }} 
@@ -340,18 +339,16 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     </div></body></html>"""
 
 # 🌟 100% PERFECT CHATE-STYLE DOCX 🌟
-def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
+def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False, sub="Subject", grade="Class", total_m="Marks", exam_time="Time"):
     doc = Document()
     
-    meta_match = re.search(r'\|\|META\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|\|', md_content)
-    if meta_match:
-        sub = meta_match.group(1)
-        grade = meta_match.group(2)
-        total_m = meta_match.group(3)
-        exam_time = meta_match.group(4)
-        md_content = md_content.replace(meta_match.group(0), "").strip()
-    else:
-        sub, grade, total_m, exam_time = "Subject", "Class", "Marks", "Time"
+    # Remove ANY accidental headers AI might have generated
+    md_content = re.sub(r"^#.*?\*\*\*", "", md_content, count=1, flags=re.DOTALL).strip()
+    md_content = re.sub(r"^\*\*Subject:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
+    md_content = re.sub(r"^\*\*Class:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
+    md_content = re.sub(r"^\*\*Marks:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
+    md_content = re.sub(r"^\*\*Time:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
+    md_content = md_content.strip()
         
     md_content = md_content.replace('\r', '')
     
@@ -562,11 +559,15 @@ with tab_create:
     st.info(f"📊 Total Questions: {total_q} | 🏆 Maximum Marks: {total_m}")
 
     if st.button("🚀 Generate Paper", use_container_width=True):
+        st.session_state.current_subject = sub
+        st.session_state.current_class = grade
+        st.session_state.current_marks = str(total_m)
+        
         q_reqs = build_question_prompt(
             mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answer_key, paper_language
         )
         
-        prompt = f"{q_reqs}\nTopics: {syl}\n\nIMPORTANT: Start directly with the questions. Do NOT generate any Title, Institute Name, Time, or Marks at the top."
+        prompt = f"Subject: {sub}\nClass: {grade}\nTopics: {syl}\n\n{q_reqs}\n\nIMPORTANT: Start directly with the questions. DO NOT generate any Title, Institute Name, Time, or Marks at the top."
         
         with st.spinner("Generating Paper..."):
             try:
@@ -590,17 +591,17 @@ with tab_create:
             for i, b in enumerate(st.session_state.blocks):
                 st.session_state.blocks[i]['text'] = st.text_area(f"Block {i}", b['text'], height=100)
         
-        # 🌟 HIDDEN METADATA TRICK (100% Reliable) 🌟
-        paper_md = f"||META|{sub}|{grade}|{total_m}|{exam_time}||\n\n" + "\n\n".join([b['text'] for b in st.session_state.blocks])
+        paper_md = "\n\n".join([b['text'] for b in st.session_state.blocks])
         
-        f_html = create_a4_html(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
-        f_word = create_word_docx(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
+        # Pass the actual values directly from session state or inputs
+        f_html = create_a4_html(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, st.session_state.current_subject, st.session_state.current_class, st.session_state.current_marks, exam_time)
+        f_word = create_word_docx(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, st.session_state.current_subject, st.session_state.current_class, st.session_state.current_marks, exam_time)
         
         c1, c2, c3 = st.columns(3)
-        c1.download_button("🖨️ HTML", f_html, f"{sub}.html", "text/html")
-        c2.download_button("📄 Word", f_word, f"{sub}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        c1.download_button("🖨️ HTML", f_html, f"{st.session_state.current_subject}.html", "text/html")
+        c2.download_button("📄 Word", f_word, f"{st.session_state.current_subject}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
         if c3.button("☁️ Save History"):
-            data = {"username": st.session_state.username, "date": datetime.now().strftime("%Y-%m-%d"), "subject": sub, "board": board_format, "content": paper_md}
+            data = {"username": st.session_state.username, "date": datetime.now().strftime("%Y-%m-%d"), "subject": st.session_state.current_subject, "board": board_format, "content": paper_md}
             supabase.table("papers").insert(data).execute()
             st.success("Saved!")
 
@@ -610,7 +611,7 @@ with tab_history:
     if res.data:
         for p in res.data:
             with st.expander(f"📄 {p['subject']} ({p['date']})"):
-                h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
+                h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, p['subject'], "N/A", "N/A", exam_time)
                 st.download_button("Download HTML", h_html, f"History_{p['id']}.html", "text/html", key=f"h_{p['id']}")
                 if st.button("Delete", key=f"d_{p['id']}"):
                     delete_paper(p['id']); st.rerun()
