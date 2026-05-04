@@ -169,7 +169,7 @@ st.sidebar.header("📜 Formatting")
 board_format = st.sidebar.selectbox("Board Pattern", ["Standard", "BSEB (Bihar Board)", "CBSE", "ICSE"])
 paper_language = st.sidebar.selectbox("Paper Language", ["English", "Hindi", "Bilingual"])
 include_answer_key = st.sidebar.toggle("Include Answer Key", value=True)
-is_two_column = st.sidebar.toggle("📄 Two-Column Format", value=False)
+is_two_column = st.sidebar.toggle("📄 Two-Column Format", value=True) # Default turned ON for the new layout
 
 # ==========================================
 # --- API CONFIGURATION LOGIC ---
@@ -182,10 +182,10 @@ try:
     flash_models = [m for m in valid_models if '1.5-flash' in m]
     working_model_name = flash_models[0] if flash_models else valid_models[0]
 except Exception as e: 
-    # 🌟 FIX: Updated to the new, stable model name
     working_model_name = "gemini-1.5-flash" 
     if user_api_key:
         st.sidebar.error("❌ Invalid API Key. Please check your entry.")
+
 # --- Helper Functions ---
 def extract_text_from_pdf(uploaded_file, start_page, end_page):
     try:
@@ -211,9 +211,11 @@ def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, 
         lang_instruction = "LANGUAGE RULE: Generate the paper in Hinglish (a mix of simple Hindi and English). Provide English terms in brackets for technical words."
     
     base_prompt = "\n".join(reqs) + f"\n\n{lang_instruction}\n\n" + """CRITICAL FORMATTING:
-1. Separate Main Header, every Question, and Answer Key with delimiter: `|||` on a new line.
-2. MATH: USE UNICODE SYMBOLS ONLY (θ, π, √, ²). NO LaTeX. Write fractions as a/b.
-3. DO NOT use special checkboxes or bullets like ☐, ☑, •, ◦. Use standard text like [ ] or (A).
+1. START DIRECTLY WITH QUESTIONS. DO NOT GENERATE ANY INSTITUTE NAME, TIME, MARKS OR HEADER AT THE TOP.
+2. Separate every Question and Answer Key with delimiter: `|||` on a new line.
+3. MATH: USE UNICODE SYMBOLS ONLY (θ, π, √, ²). NO LaTeX. Write fractions as a/b.
+4. For MCQs, output options in a single horizontal line if short, like: (A) Opt1  (B) Opt2  (C) Opt3  (D) Opt4.
+5. DO NOT use special checkboxes like ☐, ☑, •, ◦. Use [ ] or (A).
     """
     
     if include_answers: return base_prompt + "\nAdd '# Answer Key' at end, also separated by `|||`. Use the requested language in answers too."
@@ -230,110 +232,105 @@ def clean_math_for_word(text):
     text = re.sub(r'\\\[(.*?)\\\]', r'\1', text)
     latex_map = {r'\pi': 'π', r'\theta': 'θ', r'\sqrt': '√', r'\times': '×', r'\div': '÷', '$': '', '^2': '²', '^3': '³'}
     for k, v in latex_map.items(): text = text.replace(k, v)
-    
-    # 🌟 AGGRESSIVE CLEANUP for Word Square Boxes (Tofu Fix) 🌟
-    text = text.replace('☐', '[ ]').replace('☑', '[x]')
-    text = text.replace('•', '-').replace('◦', '-')
-    text = text.replace('\u200b', '') # remove zero width space
-    # Catching all weird AI generated hidden bullets
-    text = text.replace('\u2022', '-') # standard bullet
-    text = text.replace('\u25cf', '-') # another black circle
-    text = text.replace('\u25cb', '-') # white circle
-    text = text.replace('\u25a0', '[ ]') # black square
-    text = text.replace('\u25a1', '[ ]') # white square
-    
+    text = text.replace('☐', '[ ]').replace('☑', '[x]').replace('•', '-').replace('◦', '-')
+    text = text.replace('\u200b', '').replace('\u2022', '-').replace('\u25cf', '-').replace('\u25cb', '-')
+    text = text.replace('\u25a0', '[ ]').replace('\u25a1', '[ ]')
     return text.strip()
 
-# ✅ HTML EXPORT (Fixed to force logo at the absolute top)
-# 🌟 STEP 1: NEW HTML FUNCTION (Professional Header & Vertical Line)
-# 🌟 STEP 1: NEW HTML FUNCTION (Professional Header & Vertical Line)
+# 🌟 100% PERFECT CHATE-STYLE HTML 🌟
 def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
-    md_content = clean_math_for_word(md_content)
+    # Hidden Metadata Extraction (100% reliable)
+    meta_match = re.search(r'\|\|META\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|\|', md_content)
+    if meta_match:
+        sub = meta_match.group(1)
+        grade = meta_match.group(2)
+        total_m = meta_match.group(3)
+        exam_time = meta_match.group(4)
+        md_content = md_content.replace(meta_match.group(0), "").strip()
+    else:
+        sub, grade, total_m, exam_time = "Subject", "Class", "Marks", "Time"
 
+    md_content = clean_math_for_word(md_content)
+    
     logo_html_inline = ""
     logo_footer = ""
     if inst_logo:
         inst_logo.seek(0)
         b64 = base64.b64encode(inst_logo.getvalue()).decode()
-        logo_html_inline = f"<img src='data:{inst_logo.type};base64,{b64}' style='max-height: 60px; margin-right: 15px; vertical-align: middle;'/>"
+        logo_html_inline = f"<img src='data:{inst_logo.type};base64,{b64}' style='max-height: 65px; margin-right: 15px; vertical-align: top;'/>"
         logo_footer = f"<img src='data:{inst_logo.type};base64,{b64}' style='height: 18px; vertical-align: middle; margin-right: 8px;'/>"
-
-    # AI के बनाये सादे हेडर में से जानकारी निकालना (Extracting info)
-    sub_match = re.search(r'\*\*Subject:\*\*\s*(.*?)\s*\|', md_content)
-    class_match = re.search(r'\*\*Class:\*\*\s*(.*?)\n', md_content)
-    marks_match = re.search(r'\*\*Marks:\*\*\s*(.*?)\s*\|', md_content)
-    time_match = re.search(r'\*\*Time:\*\*\s*(.*?)\n', md_content)
-
-    sub_text = sub_match.group(1) if sub_match else "Mathematics"
-    class_text = class_match.group(1) if class_match else "10th"
-    marks_text = marks_match.group(1) if marks_match else "100"
-    time_text = time_match.group(1) if time_match else "3 Hrs"
-
-    # आपकी इमेज जैसा शानदार Professional Header
+    
     custom_header = f"""
-    <div style='border: 2px solid black; padding: 10px; margin-bottom: 20px; width: 100%; box-sizing: border-box;'>
-        <table style='width: 100%; border-collapse: collapse;'>
+    <div style='border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 10px; width: 100%;'>
+        <table style='width: 100%; border-collapse: collapse; border: none;'>
             <tr>
-                <td style='width: 20%; text-align: left;'>{logo_html_inline}</td>
-                <td style='width: 60%; text-align: center;'>
-                    <h1 style='margin: 0; font-size: 28px; text-transform: uppercase;'>{i_name}</h1>
+                <td style='width: 25%; text-align: left; vertical-align: top; border: none;'>{logo_html_inline}</td>
+                <td style='width: 50%; text-align: center; vertical-align: top; border: none;'>
+                    <h1 style='margin: 0; font-size: 26px; font-family: "Times New Roman", serif; font-weight: 900; text-transform: uppercase;'>{i_name}</h1>
+                    <div style='border: 2px solid black; border-radius: 12px; display: inline-block; padding: 4px 25px; font-weight: bold; font-size: 14px; margin-top: 5px; background: white;'>
+                        EXAMINATION
+                    </div>
                 </td>
-                <td style='width: 20%;'></td>
+                <td style='width: 25%; text-align: right; vertical-align: top; font-weight: bold; font-size: 13px; border: none;'>
+                    Sub.: {sub}<br>Marks: {total_m}
+                </td>
             </tr>
         </table>
-        <hr style='border: 2px solid black; margin: 10px 0;'>
-        <table style='width: 100%; font-weight: bold; font-size: 14px;'>
+        <table style='width: 100%; font-weight: bold; font-size: 13px; margin-top: -20px; border: none;'>
             <tr>
-                <td style='text-align: left; width: 33%;'>Class : {class_text}<br>Time : {time_text}</td>
-                <td style='text-align: center; width: 33%;'>
-                    <span style='border: 2px solid black; padding: 5px 20px; border-radius: 10px;'>EXAMINATION</span>
-                </td>
-                <td style='text-align: right; width: 33%;'>Sub. : {sub_text}<br>Marks : {marks_text}</td>
+                <td style='text-align: left; border: none;'>Class : {grade}<br>Time : {exam_time}</td>
             </tr>
         </table>
     </div>
-    <div style='background-color: black; color: white; text-align: center; padding: 5px; font-weight: bold; font-size: 16px; margin-bottom: 20px; text-transform: uppercase;'>
-        Multiple Choice Questions
+    <div style='border-top: 1px solid black; border-bottom: 3px solid black; padding: 2px 0; margin-bottom: 15px;'>
+        <div style='background-color: black; color: white; padding: 5px; text-align: center; font-weight: bold; font-size: 15px; text-transform: uppercase; letter-spacing: 1px;'>
+            Multiple Choice Questions & Theory
+        </div>
     </div>
-    <h2 style='text-align: center; text-decoration: underline; margin-bottom: 20px; text-transform: uppercase;'>{sub_text}</h2>
+    <h2 style='text-align: center; text-decoration: underline; text-transform: uppercase; margin-top: 0; margin-bottom: 15px; font-size: 18px;'>{sub}</h2>
     """
 
-    # AI के पुराने सादे हेडर को हटाना
-    md_content = re.sub(r"^#.*?\*\*\*", "", md_content, count=1, flags=re.DOTALL).strip()
-
-    pb = "<div style='page-break-before: always; column-span: all; width: 100%;'></div>\n\n"
-    ans_header = f"{pb}{custom_header}\n\n<h2 style='text-align: center; column-span: all;'>Answer Key</h2>\n\n"
-
-    md_content = md_content.replace("# Answer Key", ans_header)
-    md_content = md_content.replace("## Answer Key", ans_header)
-    md_content = md_content.replace("# ANSWER KEY", ans_header)
-
-    html_body = custom_header + "\n" + markdown.markdown(md_content)
-
-    # 🌟 बीच की लाइन (column-rule) का जादू 🌟
+    ans_split_marker = "|||ANSWER_KEY_SPLIT|||"
+    md_content = re.sub(r'(?im)^#+\s*Answer Key.*$', ans_split_marker, md_content)
+    
+    if ans_split_marker in md_content:
+        q_part, a_part = md_content.split(ans_split_marker)
+        final_inner_html = f"""
+        {custom_header}
+        <div class="content-body">{markdown.markdown(q_part.strip())}</div>
+        <div style="page-break-before: always; width: 100%;"></div>
+        {custom_header}
+        <h2 style="text-align: center; text-decoration: underline; margin-bottom: 15px;">ANSWER KEY</h2>
+        <div class="content-body">{markdown.markdown(a_part.strip())}</div>
+        """
+    else:
+        final_inner_html = f"""
+        {custom_header}
+        <div class="content-body">{markdown.markdown(md_content.strip())}</div>
+        """
+    
     col_style = "column-count: 2; column-gap: 15mm; column-rule: 1px solid #000; font-size: 14px;" if is_2_col else "font-size: 16px;"
 
     return f"""<!DOCTYPE html><html><head><style>
-    body {{ background: #f0f0f0; font-family: 'Times New Roman', serif; margin: 0; padding: 20px; display: flex; justify-content: center; }}
-    .a4-page {{ background: white; width: 210mm; min-height: 297mm; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.2); box-sizing: border-box; position: relative; overflow: hidden; }}
-    /* Watermark CSS */
+    body {{ background: #f0f0f0; font-family: 'Times New Roman', serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} 
+    .a4-page {{ background: white; width: 210mm; min-height: 297mm; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.2); box-sizing: border-box; position: relative; overflow: hidden; }} 
     .watermark {{ position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 80px; color: rgba(0, 0, 0, 0.05); z-index: 0; pointer-events: none; white-space: nowrap; font-weight: bold; }}
     table {{ width: 100%; border-collapse: collapse; border: none; position: relative; z-index: 1; }}
     td {{ border: none; padding: 0; }}
-    @media print {{
-        body {{ background: white; padding: 0; display: block; }}
-        .a4-page {{ box-shadow: none; width: 100%; min-height: auto; padding: 0; margin: 0; page-break-after: always; }}
-        @page {{ size: A4; margin: 10mm; }}
+    @media print {{ 
+        body {{ background: white; padding: 0; display: block; }} 
+        .a4-page {{ box-shadow: none; width: 100%; min-height: auto; padding: 0; margin: 0; }} 
+        @page {{ size: A4; margin: 10mm; }} 
         tfoot {{ display: table-footer-group; }}
-    }}
-    h1, h2, h3 {{ text-align: center; column-span: all; }}
-    .content-body {{ {col_style} position: relative; z-index: 1; text-align: justify; }}
-    .footer-content {{ text-align: center; margin-top: 20px; padding-top: 10px; border-top: 2px dashed #bbb; font-size: 13px; color: #444; position: relative; z-index: 1; }}
+    }} 
+    h1, h2, h3 {{ text-align: center; column-span: all; }} 
+    .content-body {{ {col_style} position: relative; z-index: 1; text-align: justify; }} 
+    .footer-content {{ text-align: center; margin-top: 20px; padding-top: 10px; border-top: 2px dashed #bbb; font-size: 13px; color: #444; position: relative; z-index: 1; background: white; }}
     </style></head><body><div class="a4-page">
     <div class="watermark">{i_name}</div>
     <table>
         <thead><tr><td></td></tr></thead>
-        <tbody><tr><td><div class="content-body">{html_body}</div></td></tr></tbody>
+        <tbody><tr><td>{final_inner_html}</td></tr></tbody>
         <tfoot><tr><td>
             <div class="footer-content">
                 {logo_footer}<strong>{i_name}</strong> | 📍 {i_address} | 📞 {i_contact} | 👨‍🏫 <strong>{t_name}</strong>
@@ -342,9 +339,20 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     </table>
     </div></body></html>"""
 
-# ✅ WORD EXPORT (Fixed to smartly skip AI text)
+# 🌟 100% PERFECT CHATE-STYLE DOCX 🌟
 def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False):
     doc = Document()
+    
+    meta_match = re.search(r'\|\|META\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|\|', md_content)
+    if meta_match:
+        sub = meta_match.group(1)
+        grade = meta_match.group(2)
+        total_m = meta_match.group(3)
+        exam_time = meta_match.group(4)
+        md_content = md_content.replace(meta_match.group(0), "").strip()
+    else:
+        sub, grade, total_m, exam_time = "Subject", "Class", "Marks", "Time"
+        
     md_content = md_content.replace('\r', '')
     
     style = doc.styles['Normal']
@@ -382,21 +390,51 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         for section in doc.sections:
             section.top_margin = section.bottom_margin = section.left_margin = section.right_margin = Inches(0.4)
 
-    def insert_inline_header():
-        p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    def insert_chate_header():
+        table = doc.add_table(rows=2, cols=3)
+        table.autofit = False
+        for cell in table.columns[0].cells: cell.width = Inches(1.5)
+        for cell in table.columns[1].cells: cell.width = Inches(4.0)
+        for cell in table.columns[2].cells: cell.width = Inches(1.5)
+        
         if inst_logo is not None:
             try:
                 inst_logo.seek(0)
-                r_img = p.add_run()
-                r_img.add_picture(inst_logo, height=Inches(0.45))
-                p.add_run("   ") 
+                p0 = table.cell(0,0).paragraphs[0]
+                r0 = p0.add_run()
+                r0.add_picture(inst_logo, height=Inches(0.5))
             except Exception: pass
-        r_text = p.add_run(i_name)
-        r_text.font.size = Pt(16)
-        r_text.bold = True
+            
+        p1 = table.cell(0,1).paragraphs[0]
+        p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r1 = p1.add_run(i_name.upper())
+        r1.bold = True
+        r1.font.size = Pt(18)
+        
+        p2 = table.cell(0,2).paragraphs[0]
+        p2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        r2 = p2.add_run(f"Sub.: {sub}\nMarks: {total_m}")
+        r2.bold = True
+        r2.font.size = Pt(10)
+        
+        p3 = table.cell(1,0).paragraphs[0]
+        r3 = p3.add_run(f"Class : {grade}\nTime : {exam_time}")
+        r3.bold = True
+        r3.font.size = Pt(10)
+        
+        p4 = table.cell(1,1).paragraphs[0]
+        p4.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r4 = p4.add_run("[ EXAMINATION ]")
+        r4.bold = True
+        r4.font.size = Pt(12)
+        
+        doc.add_paragraph("__________________________________________________________________________").alignment = WD_ALIGN_PARAGRAPH.CENTER
+        pt = doc.add_paragraph("MULTIPLE CHOICE QUESTIONS & THEORY")
+        pt.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        pt.runs[0].bold = True
+        doc.add_paragraph() 
 
-    insert_inline_header()
+    insert_chate_header()
 
     if is_2_col:
         new_section = doc.add_section(0) 
@@ -410,14 +448,9 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         if not line_clean: continue
         line_clean = clean_math_for_word(line_clean)
         
-        # 🌟 FIX 3: Smarter check to skip the AI's plain text header
-        clean_header_check = line_clean.replace('#', '').replace('*', '').strip()
-        if clean_header_check.lower() == i_name.lower():
-            continue
-            
         if "Answer Key" in line_clean or "ANSWER KEY" in line_clean:
             doc.add_page_break() 
-            insert_inline_header() 
+            insert_chate_header() 
             doc.add_heading("Answer Key", level=1)
             continue
             
@@ -447,13 +480,11 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
             except Exception: pass
             
         run_name = footer_para.add_run(f"{i_name}  |  ")
-        run_name.font.name = 'Mangal'
         run_name.font.size = Pt(10)
         run_name.font.bold = True
         run_name.font.color.rgb = RGBColor(100, 100, 100)
         
         run_rest = footer_para.add_run(f"📍 {i_address}  |  📞 {i_contact}  |  👨‍🏫 {t_name}")
-        run_rest.font.name = 'Mangal'
         run_rest.font.size = Pt(10)
         run_rest.font.color.rgb = RGBColor(100, 100, 100)
             
@@ -531,19 +562,11 @@ with tab_create:
     st.info(f"📊 Total Questions: {total_q} | 🏆 Maximum Marks: {total_m}")
 
     if st.button("🚀 Generate Paper", use_container_width=True):
-        header = f"# {inst_name}\n**Subject:** {sub} | **Class:** {grade}\n**Marks:** {total_m} | **Time:** {exam_time}\n***"
-        
         q_reqs = build_question_prompt(
-            mcq_c, mcq_d, mcq_m, 
-            fib_c, fib_d, fib_m, 
-            tf_c, tf_d, tf_m, 
-            short_c, short_d, short_m, 
-            long_c, long_d, long_m, 
-            include_answer_key,
-            paper_language  
+            mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answer_key, paper_language
         )
         
-        prompt = f"{header}\n{q_reqs}\nTopics: {syl}"
+        prompt = f"{q_reqs}\nTopics: {syl}\n\nIMPORTANT: Start directly with the questions. Do NOT generate any Title, Institute Name, Time, or Marks at the top."
         
         with st.spinner("Generating Paper..."):
             try:
@@ -558,9 +581,6 @@ with tab_create:
                 error_msg = str(e).lower()
                 if "429" in error_msg or "quota" in error_msg:
                     st.error("🚨 The server's daily limit has been reached!")
-                    st.warning("💡 Tip: For uninterrupted paper generation, enter your own free Gemini API Key under 'Advanced Settings' in the sidebar.")
-                elif "api_key_invalid" in error_msg or "api key not valid" in error_msg or "invalid" in error_msg:
-                    st.error("❌ The API Key you entered is invalid. Please check and try again.")
                 else:
                     st.error(f"Error: {e}")
 
@@ -570,7 +590,9 @@ with tab_create:
             for i, b in enumerate(st.session_state.blocks):
                 st.session_state.blocks[i]['text'] = st.text_area(f"Block {i}", b['text'], height=100)
         
-        paper_md = "\n\n".join([b['text'] for b in st.session_state.blocks])
+        # 🌟 HIDDEN METADATA TRICK (100% Reliable) 🌟
+        paper_md = f"||META|{sub}|{grade}|{total_m}|{exam_time}||\n\n" + "\n\n".join([b['text'] for b in st.session_state.blocks])
+        
         f_html = create_a4_html(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
         f_word = create_word_docx(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column)
         
@@ -592,4 +614,3 @@ with tab_history:
                 st.download_button("Download HTML", h_html, f"History_{p['id']}.html", "text/html", key=f"h_{p['id']}")
                 if st.button("Delete", key=f"d_{p['id']}"):
                     delete_paper(p['id']); st.rerun()
-
