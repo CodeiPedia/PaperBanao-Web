@@ -146,7 +146,6 @@ else:
         st.sidebar.error("⚠️ Free Trial Expired!")
 
 st.sidebar.markdown("---")
-# BYOK Feature
 st.sidebar.header("⚙️ Advanced Settings")
 st.sidebar.write("Use your own free Gemini API Key when the server limit is reached.")
 user_api_key = st.sidebar.text_input("Your Gemini API Key (Optional)", type="password", help="Get your free key from Google AI Studio")
@@ -171,7 +170,7 @@ st.sidebar.header("📜 Formatting")
 board_format = st.sidebar.selectbox("Board Pattern", ["Standard", "BSEB (Bihar Board)", "CBSE", "ICSE"])
 paper_language = st.sidebar.selectbox("Paper Language", ["English", "Hindi", "Bilingual"])
 include_answer_key = st.sidebar.toggle("Include Answer Key", value=True)
-is_two_column = st.sidebar.toggle("📄 Two-Column Format", value=True) # Default turned ON for the new layout
+is_two_column = st.sidebar.toggle("📄 Two-Column Format", value=True)
 
 # ==========================================
 # --- API CONFIGURATION LOGIC ---
@@ -197,7 +196,7 @@ def extract_text_from_pdf(uploaded_file, start_page, end_page):
         return "".join([reader.pages[i].extract_text() + "\n" for i in range(start_index, end_index)])
     except Exception: return ""
 
-def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answers, selected_language):
+def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answers, selected_language, subject):
     reqs = []
     if mcq_c > 0: reqs.append(f"- {mcq_c} MCQs (Diff: {mcq_d}). [{mcq_m} Mark each]")
     if fib_c > 0: reqs.append(f"- {fib_c} FIBs (Diff: {fib_d}). [{fib_m} Marks each]")
@@ -212,12 +211,13 @@ def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, 
     else:
         lang_instruction = "LANGUAGE RULE: Generate the paper in Hinglish (a mix of simple Hindi and English). Provide English terms in brackets for technical words."
     
-    base_prompt = "\n".join(reqs) + f"\n\n{lang_instruction}\n\n" + """CRITICAL FORMATTING:
-1. START DIRECTLY WITH QUESTIONS. DO NOT GENERATE ANY INSTITUTE NAME, TIME, MARKS OR HEADER AT THE TOP.
-2. Separate every Question and Answer Key with delimiter: `|||` on a new line.
-3. MATH: USE UNICODE SYMBOLS ONLY (θ, π, √, ²). NO LaTeX. Write fractions as a/b.
-4. For MCQs, output options in a single horizontal line if short, like: (A) Opt1  (B) Opt2  (C) Opt3  (D) Opt4.
-5. DO NOT use special checkboxes like ☐, ☑, •, ◦. Use [ ] or (A).
+    base_prompt = "\n".join(reqs) + f"\n\n{lang_instruction}\n\n" + f"""CRITICAL FORMATTING:
+1. STRICTLY adhere to the subject: **{subject}**. Do NOT generate general knowledge questions or questions from other subjects.
+2. START DIRECTLY WITH QUESTIONS. DO NOT GENERATE ANY INSTITUTE NAME, TIME, MARKS OR HEADER AT THE TOP.
+3. Separate every Question and Answer Key with delimiter: `|||` on a new line.
+4. MATH: USE UNICODE SYMBOLS ONLY (θ, π, √, ²). NO LaTeX. Write fractions as a/b.
+5. For MCQs, output options in a single horizontal line if short, like: (A) Opt1  (B) Opt2  (C) Opt3  (D) Opt4.
+6. DO NOT use special checkboxes like ☐, ☑, •, ◦. Use [ ] or (A).
     """
     
     if include_answers: return base_prompt + "\nAdd '# Answer Key' at end, also separated by `|||`. Use the requested language in answers too."
@@ -239,19 +239,8 @@ def clean_math_for_word(text):
     text = text.replace('\u25a0', '[ ]').replace('\u25a1', '[ ]')
     return text.strip()
 
-# 🌟 100% PERFECT CHATE-STYLE HTML (Logo & Name Together) 🌟
+# 🌟 HTML RENDERER (Cleaned up, strict data injection) 🌟
 def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False, sub="Subject", grade="Class", total_m="Marks", exam_time="Time"):
-    # Hidden Metadata Extraction (100% reliable)
-    meta_match = re.search(r'\|\|META\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|\|', md_content)
-    if meta_match:
-        sub = meta_match.group(1)
-        grade = meta_match.group(2)
-        total_m = meta_match.group(3)
-        exam_time = meta_match.group(4)
-        md_content = md_content.replace(meta_match.group(0), "").strip()
-    else:
-        sub, grade, total_m, exam_time = "Subject", "Class", "Marks", "Time"
-
     md_content = clean_math_for_word(md_content)
     
     # Remove ANY accidental headers AI might have generated
@@ -267,24 +256,29 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     if inst_logo:
         inst_logo.seek(0)
         b64 = base64.b64encode(inst_logo.getvalue()).decode()
-        # 🌟 FIX: Logo is now vertically aligned to the middle with the text
-        logo_html_inline = f"<img src='data:{inst_logo.type};base64,{b64}' style='max-height: 42px; margin-right: 12px; vertical-align: middle; margin-bottom: 5px;'/>"
+        # Adjusted padding so it sits perfectly next to text
+        logo_html_inline = f"<td style='width: 1%; padding-right: 15px; vertical-align: middle;'><img src='data:{inst_logo.type};base64,{b64}' style='max-height: 55px;'/></td>"
         logo_footer = f"<img src='data:{inst_logo.type};base64,{b64}' style='height: 18px; vertical-align: middle; margin-right: 8px;'/>"
     
     custom_header = f"""
     <div style='border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 10px; width: 100%;'>
         <table style='width: 100%; border-collapse: collapse; border: none;'>
             <tr>
-                <td style='width: 20%; border: none;'></td>
-                <td style='width: 60%; text-align: center; vertical-align: middle; border: none;'>
-                    <h1 style='margin: 0; font-size: 26px; font-family: "Times New Roman", serif; font-weight: 900; text-transform: uppercase;'>
-                        {logo_html_inline}{i_name}
-                    </h1>
+                <td style='width: 25%; text-align: left; vertical-align: top; border: none;'></td>
+                <td style='width: 50%; text-align: center; vertical-align: top; border: none;'>
+                    <table style='margin: 0 auto;'>
+                        <tr>
+                            {logo_html_inline}
+                            <td style='vertical-align: middle;'>
+                                <h1 style='margin: 0; font-size: 26px; font-family: "Times New Roman", serif; font-weight: 900; text-transform: uppercase;'>{i_name}</h1>
+                            </td>
+                        </tr>
+                    </table>
                     <div style='border: 2px solid black; border-radius: 12px; display: inline-block; padding: 4px 25px; font-weight: bold; font-size: 14px; margin-top: 5px; background: white;'>
                         EXAMINATION
                     </div>
                 </td>
-                <td style='width: 20%; text-align: right; vertical-align: top; font-weight: bold; font-size: 13px; border: none;'>
+                <td style='width: 25%; text-align: right; vertical-align: top; font-weight: bold; font-size: 13px; border: none;'>
                     Sub.: {sub}<br>Marks: {total_m}
                 </td>
             </tr>
@@ -352,21 +346,10 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     </table>
     </div></body></html>"""
 
-
-# 🌟 100% PERFECT CHATE-STYLE DOCX (Logo & Name Together) 🌟
+# 🌟 WORD RENDERER 🌟
 def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False, sub="Subject", grade="Class", total_m="Marks", exam_time="Time"):
     doc = Document()
     
-    meta_match = re.search(r'\|\|META\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|\|', md_content)
-    if meta_match:
-        sub = meta_match.group(1)
-        grade = meta_match.group(2)
-        total_m = meta_match.group(3)
-        exam_time = meta_match.group(4)
-        md_content = md_content.replace(meta_match.group(0), "").strip()
-    else:
-        sub, grade, total_m, exam_time = "Subject", "Class", "Marks", "Time"
-        
     # Remove ANY accidental headers AI might have generated
     md_content = re.sub(r"^#.*?\*\*\*", "", md_content, count=1, flags=re.DOTALL).strip()
     md_content = re.sub(r"^\*\*Subject:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
@@ -419,7 +402,6 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         for cell in table.columns[1].cells: cell.width = Inches(4.0)
         for cell in table.columns[2].cells: cell.width = Inches(1.5)
         
-        # 🌟 FIX: We put Logo and Name together in the center cell
         p1 = table.cell(0,1).paragraphs[0]
         p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
@@ -428,7 +410,7 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
                 inst_logo.seek(0)
                 r_logo = p1.add_run()
                 r_logo.add_picture(inst_logo, height=Inches(0.38))
-                p1.add_run("   ") # Space between logo and name
+                p1.add_run("   ") 
             except Exception: pass
             
         r1 = p1.add_run(i_name.upper())
@@ -591,7 +573,7 @@ with tab_create:
         st.session_state.current_marks = str(total_m)
         
         q_reqs = build_question_prompt(
-            mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answer_key, paper_language
+            mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answer_key, paper_language, sub
         )
         
         prompt = f"Subject: {sub}\nClass: {grade}\nTopics: {syl}\n\n{q_reqs}\n\nIMPORTANT: Start directly with the questions. DO NOT generate any Title, Institute Name, Time, or Marks at the top."
@@ -620,7 +602,7 @@ with tab_create:
         
         paper_md = "\n\n".join([b['text'] for b in st.session_state.blocks])
         
-        # Pass the actual values directly from session state or inputs
+        # We pass everything directly now, no more messy META string hacking!
         f_html = create_a4_html(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, st.session_state.current_subject, st.session_state.current_class, st.session_state.current_marks, exam_time)
         f_word = create_word_docx(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, st.session_state.current_subject, st.session_state.current_class, st.session_state.current_marks, exam_time)
         
