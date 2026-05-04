@@ -239,11 +239,10 @@ def clean_math_for_word(text):
     text = text.replace('\u25a0', '[ ]').replace('\u25a1', '[ ]')
     return text.strip()
 
-# 🌟 100% PERFECT CHATE-STYLE HTML (Header Fixed) 🌟
-def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False, sub="Subject", grade="Class", total_m="Marks", exam_time="Time"):
+# 🌟 HTML RENDERER 🌟
+def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False, sub="Subject", grade="Class", total_m="Marks", exam_time="Time", topics=""):
     md_content = clean_math_for_word(md_content)
     
-    # Remove ANY accidental headers AI might have generated
     md_content = re.sub(r"^#.*?\*\*\*", "", md_content, count=1, flags=re.DOTALL).strip()
     md_content = re.sub(r"^\*\*Subject:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
     md_content = re.sub(r"^\*\*Class:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
@@ -259,7 +258,9 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
         logo_html_inline = f"<td style='width: 1%; padding-right: 15px; vertical-align: middle;'><img src='data:{inst_logo.type};base64,{b64}' style='max-height: 55px;'/></td>"
         logo_footer = f"<img src='data:{inst_logo.type};base64,{b64}' style='height: 18px; vertical-align: middle; margin-right: 8px;'/>"
     
-    # 🌟 FIX: Name in one line & Class/Time level with Sub/Marks
+    # Using 'topics' variable if provided, otherwise fallback to 'sub'
+    main_heading_text = topics.strip() if topics.strip() != "" else sub
+    
     custom_header = f"""
     <div style='border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 10px; width: 100%;'>
         <table style='width: 100%; border-collapse: collapse; border: none; margin-bottom: 10px;'>
@@ -293,7 +294,7 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
             Multiple Choice Questions & Theory
         </div>
     </div>
-    <h2 style='text-align: center; text-decoration: underline; text-transform: uppercase; margin-top: 0; margin-bottom: 15px; font-size: 18px;'>{sub}</h2>
+    <h2 style='text-align: center; text-decoration: underline; text-transform: uppercase; margin-top: 0; margin-bottom: 15px; font-size: 18px;'>{main_heading_text}</h2>
     """
 
     ans_split_marker = "|||ANSWER_KEY_SPLIT|||"
@@ -324,9 +325,9 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     table {{ width: 100%; border-collapse: collapse; border: none; position: relative; z-index: 1; }}
     td {{ border: none; padding: 0; }}
     @media print {{ 
-        body {{ background: white; padding: 0; display: block; }} 
-        .a4-page {{ box-shadow: none; width: 100%; min-height: auto; padding: 0; margin: 0; page-break-after: always; }} 
-        @page {{ size: A4; margin: 10mm; }} 
+        @page {{ size: A4; margin: 0; }} 
+        body {{ background: white; padding: 0; margin: 0; display: block; }} 
+        .a4-page {{ box-shadow: none; width: 100%; min-height: auto; padding: 10mm; margin: 0; page-break-after: always; }} 
         tfoot {{ display: table-footer-group; }}
     }} 
     h1, h2, h3 {{ text-align: center; column-span: all; }} 
@@ -345,11 +346,10 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     </table>
     </div></body></html>"""
 
-# 🌟 WORD RENDERER (Header Fixed) 🌟
-def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False, sub="Subject", grade="Class", total_m="Marks", exam_time="Time"):
+# 🌟 WORD RENDERER 🌟
+def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False, sub="Subject", grade="Class", total_m="Marks", exam_time="Time", topics=""):
     doc = Document()
     
-    # Remove ANY accidental headers AI might have generated
     md_content = re.sub(r"^#.*?\*\*\*", "", md_content, count=1, flags=re.DOTALL).strip()
     md_content = re.sub(r"^\*\*Subject:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
     md_content = re.sub(r"^\*\*Class:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
@@ -395,7 +395,6 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
             section.top_margin = section.bottom_margin = section.left_margin = section.right_margin = Inches(0.4)
 
     def insert_chate_header():
-        # Title Table (Logo + Name)
         title_table = doc.add_table(rows=1, cols=1)
         p1 = title_table.cell(0,0).paragraphs[0]
         p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -412,7 +411,6 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         r1.bold = True
         r1.font.size = Pt(18)
         
-        # Details Table (Class/Time & Sub/Marks)
         details_table = doc.add_table(rows=1, cols=3)
         details_table.autofit = False
         for cell in details_table.columns[0].cells: cell.width = Inches(2.0)
@@ -441,6 +439,14 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         pt = doc.add_paragraph("MULTIPLE CHOICE QUESTIONS & THEORY")
         pt.alignment = WD_ALIGN_PARAGRAPH.CENTER
         pt.runs[0].bold = True
+        
+        # 🌟 FIX: Topics used as main heading below the line
+        main_heading_text = topics.strip().upper() if topics.strip() != "" else sub.upper()
+        ptopics = doc.add_paragraph(main_heading_text)
+        ptopics.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        ptopics.runs[0].underline = True
+        ptopics.runs[0].font.size = Pt(14)
+        ptopics.runs[0].bold = True
         doc.add_paragraph() 
 
     insert_chate_header()
@@ -500,6 +506,7 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
     bio = BytesIO()
     doc.save(bio)
     return bio.getvalue()
+
 # ==========================================
 # --- MAIN LAYOUT ---
 # ==========================================
@@ -604,9 +611,8 @@ with tab_create:
         
         paper_md = "\n\n".join([b['text'] for b in st.session_state.blocks])
         
-        # We pass everything directly now, no more messy META string hacking!
-        f_html = create_a4_html(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, st.session_state.current_subject, st.session_state.current_class, st.session_state.current_marks, exam_time)
-        f_word = create_word_docx(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, st.session_state.current_subject, st.session_state.current_class, st.session_state.current_marks, exam_time)
+        f_html = create_a4_html(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, st.session_state.current_subject, st.session_state.current_class, st.session_state.current_marks, exam_time, syl)
+        f_word = create_word_docx(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, st.session_state.current_subject, st.session_state.current_class, st.session_state.current_marks, exam_time, syl)
         
         c1, c2, c3 = st.columns(3)
         c1.download_button("🖨️ HTML", f_html, f"{st.session_state.current_subject}.html", "text/html")
@@ -622,7 +628,7 @@ with tab_history:
     if res.data:
         for p in res.data:
             with st.expander(f"📄 {p['subject']} ({p['date']})"):
-                h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, p['subject'], "N/A", "N/A", exam_time)
+                h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, p['subject'], "N/A", "N/A", exam_time, "")
                 st.download_button("Download HTML", h_html, f"History_{p['id']}.html", "text/html", key=f"h_{p['id']}")
                 if st.button("Delete", key=f"d_{p['id']}"):
                     delete_paper(p['id']); st.rerun()
