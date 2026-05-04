@@ -212,18 +212,18 @@ def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, 
     else:
         lang_instruction = "LANGUAGE RULE: Generate the paper in Hinglish (a mix of simple Hindi and English). Provide English terms in brackets for technical words."
     
-    # 🌟 FIX: Updated AI prompt to ALWAYS place options on a NEW LINE
+    # 🌟 FIX: Stricter prompting for Q-numbering and options layout
     base_prompt = "\n".join(reqs) + f"\n\n{lang_instruction}\n\n" + f"""CRITICAL FORMATTING:
 1. STRICTLY adhere to the subject: **{subject}**. Do NOT generate general knowledge questions or questions from other subjects.
 2. START DIRECTLY WITH QUESTIONS. DO NOT GENERATE ANY INSTITUTE NAME, TIME, MARKS OR HEADER AT THE TOP.
 3. Separate every Question and Answer Key with delimiter: `|||` on a new line.
 4. MATH: USE UNICODE SYMBOLS ONLY (θ, π, √, ²). NO LaTeX. Write fractions as a/b.
-5. For MCQs, ALWAYS leave a blank line between the question text and the options. Do NOT write options on the same line as the question.
+5. NUMBERING: Always start a question with **Q** followed by the number, e.g., **Q1.**, **Q2.**, etc. DO NOT use markdown lists like `1. ` or `* `.
+6. MCQs/FIBs OPTIONS: ALWAYS place the options on a NEW LINE below the question. Do NOT put them on the same line as the question.
    Example:
-   1. What is the value of x?
-   
+   **Q1.** What is the value of x?
    (A) 1   (B) 2   (C) 3   (D) 4
-6. DO NOT use special checkboxes like ☐, ☑, •, ◦. Use [ ] or (A).
+7. DO NOT use special checkboxes like ☐, ☑, •, ◦. Use [ ] or (A).
     """
     
     if include_answers: return base_prompt + "\nAdd '# Answer Key' at end, also separated by `|||`. Use the requested language in answers too."
@@ -254,6 +254,10 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     md_content = re.sub(r"^\*\*Class:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
     md_content = re.sub(r"^\*\*Marks:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
     md_content = re.sub(r"^\*\*Time:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
+    
+    # Optional: Fix any leftover markdown lists from AI output just in case
+    md_content = re.sub(r"^\d+\.\s", "**Q.** ", md_content, flags=re.MULTILINE)
+
     md_content = md_content.strip()
     
     logo_html_inline = ""
@@ -323,6 +327,7 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     
     col_style = "column-count: 2; column-gap: 15mm; column-rule: 1px solid #000; font-size: 14px;" if is_2_col else "font-size: 16px;"
 
+    # 🌟 FIX: Added CSS to handle spacing between paragraphs (questions) better
     return f"""<!DOCTYPE html><html><head><style>
     body {{ background: #f0f0f0; font-family: 'Times New Roman', serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} 
     .a4-page {{ background: white; width: 210mm; min-height: 297mm; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.2); box-sizing: border-box; position: relative; overflow: hidden; }} 
@@ -337,6 +342,7 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     }} 
     h1, h2, h3 {{ text-align: center; column-span: all; }} 
     .content-body {{ {col_style} position: relative; z-index: 1; text-align: justify; }} 
+    .content-body p {{ margin-bottom: 8px; margin-top: 4px; }}
     .footer-content {{ text-align: center; margin-top: 20px; padding-top: 10px; border-top: 2px dashed #bbb; font-size: 13px; color: #444; position: relative; z-index: 1; background: white; }}
     </style></head><body><div class="a4-page">
     <div class="watermark">{i_name}</div>
@@ -360,6 +366,7 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
     md_content = re.sub(r"^\*\*Class:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
     md_content = re.sub(r"^\*\*Marks:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
     md_content = re.sub(r"^\*\*Time:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
+    md_content = re.sub(r"^\d+\.\s", "**Q.** ", md_content, flags=re.MULTILINE)
     md_content = md_content.strip()
         
     md_content = md_content.replace('\r', '')
