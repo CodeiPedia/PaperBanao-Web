@@ -239,8 +239,19 @@ def clean_math_for_word(text):
     text = text.replace('\u25a0', '[ ]').replace('\u25a1', '[ ]')
     return text.strip()
 
-# 🌟 100% PERFECT CHATE-STYLE HTML 🌟
+# 🌟 100% PERFECT CHATE-STYLE HTML (Logo & Name Together) 🌟
 def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False, sub="Subject", grade="Class", total_m="Marks", exam_time="Time"):
+    # Hidden Metadata Extraction (100% reliable)
+    meta_match = re.search(r'\|\|META\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|\|', md_content)
+    if meta_match:
+        sub = meta_match.group(1)
+        grade = meta_match.group(2)
+        total_m = meta_match.group(3)
+        exam_time = meta_match.group(4)
+        md_content = md_content.replace(meta_match.group(0), "").strip()
+    else:
+        sub, grade, total_m, exam_time = "Subject", "Class", "Marks", "Time"
+
     md_content = clean_math_for_word(md_content)
     
     # Remove ANY accidental headers AI might have generated
@@ -256,21 +267,24 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     if inst_logo:
         inst_logo.seek(0)
         b64 = base64.b64encode(inst_logo.getvalue()).decode()
-        logo_html_inline = f"<img src='data:{inst_logo.type};base64,{b64}' style='max-height: 65px; margin-right: 15px; vertical-align: top;'/>"
+        # 🌟 FIX: Logo is now vertically aligned to the middle with the text
+        logo_html_inline = f"<img src='data:{inst_logo.type};base64,{b64}' style='max-height: 42px; margin-right: 12px; vertical-align: middle; margin-bottom: 5px;'/>"
         logo_footer = f"<img src='data:{inst_logo.type};base64,{b64}' style='height: 18px; vertical-align: middle; margin-right: 8px;'/>"
     
     custom_header = f"""
     <div style='border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 10px; width: 100%;'>
         <table style='width: 100%; border-collapse: collapse; border: none;'>
             <tr>
-                <td style='width: 25%; text-align: left; vertical-align: top; border: none;'>{logo_html_inline}</td>
-                <td style='width: 50%; text-align: center; vertical-align: top; border: none;'>
-                    <h1 style='margin: 0; font-size: 26px; font-family: "Times New Roman", serif; font-weight: 900; text-transform: uppercase;'>{i_name}</h1>
+                <td style='width: 20%; border: none;'></td>
+                <td style='width: 60%; text-align: center; vertical-align: middle; border: none;'>
+                    <h1 style='margin: 0; font-size: 26px; font-family: "Times New Roman", serif; font-weight: 900; text-transform: uppercase;'>
+                        {logo_html_inline}{i_name}
+                    </h1>
                     <div style='border: 2px solid black; border-radius: 12px; display: inline-block; padding: 4px 25px; font-weight: bold; font-size: 14px; margin-top: 5px; background: white;'>
                         EXAMINATION
                     </div>
                 </td>
-                <td style='width: 25%; text-align: right; vertical-align: top; font-weight: bold; font-size: 13px; border: none;'>
+                <td style='width: 20%; text-align: right; vertical-align: top; font-weight: bold; font-size: 13px; border: none;'>
                     Sub.: {sub}<br>Marks: {total_m}
                 </td>
             </tr>
@@ -338,10 +352,21 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     </table>
     </div></body></html>"""
 
-# 🌟 100% PERFECT CHATE-STYLE DOCX 🌟
+
+# 🌟 100% PERFECT CHATE-STYLE DOCX (Logo & Name Together) 🌟
 def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False, sub="Subject", grade="Class", total_m="Marks", exam_time="Time"):
     doc = Document()
     
+    meta_match = re.search(r'\|\|META\|(.*?)\|(.*?)\|(.*?)\|(.*?)\|\|', md_content)
+    if meta_match:
+        sub = meta_match.group(1)
+        grade = meta_match.group(2)
+        total_m = meta_match.group(3)
+        exam_time = meta_match.group(4)
+        md_content = md_content.replace(meta_match.group(0), "").strip()
+    else:
+        sub, grade, total_m, exam_time = "Subject", "Class", "Marks", "Time"
+        
     # Remove ANY accidental headers AI might have generated
     md_content = re.sub(r"^#.*?\*\*\*", "", md_content, count=1, flags=re.DOTALL).strip()
     md_content = re.sub(r"^\*\*Subject:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
@@ -394,16 +419,18 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         for cell in table.columns[1].cells: cell.width = Inches(4.0)
         for cell in table.columns[2].cells: cell.width = Inches(1.5)
         
+        # 🌟 FIX: We put Logo and Name together in the center cell
+        p1 = table.cell(0,1).paragraphs[0]
+        p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
         if inst_logo is not None:
             try:
                 inst_logo.seek(0)
-                p0 = table.cell(0,0).paragraphs[0]
-                r0 = p0.add_run()
-                r0.add_picture(inst_logo, height=Inches(0.5))
+                r_logo = p1.add_run()
+                r_logo.add_picture(inst_logo, height=Inches(0.38))
+                p1.add_run("   ") # Space between logo and name
             except Exception: pass
             
-        p1 = table.cell(0,1).paragraphs[0]
-        p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r1 = p1.add_run(i_name.upper())
         r1.bold = True
         r1.font.size = Pt(18)
