@@ -212,12 +212,17 @@ def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, 
     else:
         lang_instruction = "LANGUAGE RULE: Generate the paper in Hinglish (a mix of simple Hindi and English). Provide English terms in brackets for technical words."
     
+    # 🌟 FIX: Updated AI prompt to ALWAYS place options on a NEW LINE
     base_prompt = "\n".join(reqs) + f"\n\n{lang_instruction}\n\n" + f"""CRITICAL FORMATTING:
 1. STRICTLY adhere to the subject: **{subject}**. Do NOT generate general knowledge questions or questions from other subjects.
 2. START DIRECTLY WITH QUESTIONS. DO NOT GENERATE ANY INSTITUTE NAME, TIME, MARKS OR HEADER AT THE TOP.
 3. Separate every Question and Answer Key with delimiter: `|||` on a new line.
 4. MATH: USE UNICODE SYMBOLS ONLY (θ, π, √, ²). NO LaTeX. Write fractions as a/b.
-5. For MCQs, output options in a single horizontal line if short, like: (A) Opt1  (B) Opt2  (C) Opt3  (D) Opt4.
+5. For MCQs, ALWAYS leave a blank line between the question text and the options. Do NOT write options on the same line as the question.
+   Example:
+   1. What is the value of x?
+   
+   (A) 1   (B) 2   (C) 3   (D) 4
 6. DO NOT use special checkboxes like ☐, ☑, •, ◦. Use [ ] or (A).
     """
     
