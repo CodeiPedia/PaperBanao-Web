@@ -521,14 +521,30 @@ with tab_create:
     source = st.radio("Method:", ["⚡ Quick", "📄 PDF Extract"], horizontal=True, label_visibility="collapsed")
 
     sub, grade, syl, up_pdf = "", "", "", None
+    pdf_text = "" # Variable to store extracted text
+
     if source == "⚡ Quick":
         c1, c2 = st.columns(2)
         sub = c1.text_input("Subject")
         grade = c2.text_input("Class")
         syl = st.text_area("Topics")
     else:
-        up_pdf = st.file_uploader("Upload PDF", type="pdf")
-        sub = st.text_input("Subject (PDF)")
+        # 🌟 FIX: Added Class, Topics, and Page Range for PDF Method
+        c1, c2 = st.columns(2)
+        sub = c1.text_input("Subject (PDF)")
+        grade = c2.text_input("Class (PDF)")
+        syl = st.text_area("Specific Topics (Optional)")
+        
+        up_pdf = st.file_uploader("Upload PDF Book/Notes", type="pdf")
+        
+        c3, c4 = st.columns(2)
+        start_p = c3.number_input("Start Page", min_value=1, value=1)
+        end_p = c4.number_input("End Page", min_value=1, value=5)
+        
+        if up_pdf is not None:
+            # Extract text from the selected pages
+            pdf_text = extract_text_from_pdf(up_pdf, start_p, end_p)
+            st.success(f"Extracted {len(pdf_text)} characters from pages {start_p} to {end_p}.")
 
     st.markdown("---")
     st.markdown("### 2. Counts & Marks")
@@ -576,7 +592,7 @@ with tab_create:
     st.markdown("---")
     st.info(f"📊 Total Questions: {total_q} | 🏆 Maximum Marks: {total_m}")
 
-    if st.button("🚀 Generate Paper", use_container_width=True):
+   if st.button("🚀 Generate Paper", use_container_width=True):
         st.session_state.current_subject = sub
         st.session_state.current_class = grade
         st.session_state.current_marks = str(total_m)
@@ -585,7 +601,11 @@ with tab_create:
             mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answer_key, paper_language, sub
         )
         
-        prompt = f"Subject: {sub}\nClass: {grade}\nTopics: {syl}\n\n{q_reqs}\n\nIMPORTANT: Start directly with the questions. DO NOT generate any Title, Institute Name, Time, or Marks at the top."
+        # 🌟 FIX: Include PDF text in the prompt if PDF method is selected
+        if source == "📄 PDF Extract" and pdf_text != "":
+            prompt = f"Subject: {sub}\nClass: {grade}\nTopics: {syl}\n\n{q_reqs}\n\nIMPORTANT: Start directly with the questions. DO NOT generate any Title, Institute Name, Time, or Marks at the top.\n\nCREATE QUESTIONS STRICTLY FROM THE FOLLOWING TEXT EXTRACTED FROM A BOOK:\n\n{pdf_text}"
+        else:
+            prompt = f"Subject: {sub}\nClass: {grade}\nTopics: {syl}\n\n{q_reqs}\n\nIMPORTANT: Start directly with the questions. DO NOT generate any Title, Institute Name, Time, or Marks at the top."
         
         with st.spinner("Generating Paper..."):
             try:
