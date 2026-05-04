@@ -161,9 +161,9 @@ exam_time = st.sidebar.text_input("Exam Time", value="2 Hours")
 
 st.sidebar.markdown("---")
 st.sidebar.header("🏢 Footer Details")
-teacher_name = st.sidebar.text_input("Teacher Name", value="Mr. Sharma")
+teacher_name = st.sidebar.text_input("Teacher Name", value="Mr. Suraj")
 inst_address = st.sidebar.text_input("Institute Address", value="123 Education Lane, City")
-inst_contact = st.sidebar.text_input("Contact Number", value="+91 9876543210")
+inst_contact = st.sidebar.text_input("Contact Number", value="+91 9310038172")
 
 st.sidebar.markdown("---")
 st.sidebar.header("📜 Formatting")
@@ -540,35 +540,35 @@ with tab_create:
     c1.write("MCQs")
     mcq_c = c2.number_input("mcq_c", 0, 50, 5, label_visibility="collapsed", key="m_c")
     mcq_m = c3.number_input("mcq_m", 1, 10, 1, label_visibility="collapsed", key="m_m")
-    mcq_d = c4.selectbox("mcq_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="m_d")
+    mcq_d = c4.selectbox("mcq_d", ["Easy", "Medium", "Hard","Mixed"], label_visibility="collapsed", key="m_d")
 
     # FIB Row
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     c1.write("Fill in the Blanks")
     fib_c = c2.number_input("fib_c", 0, 20, 3, label_visibility="collapsed", key="f_c")
     fib_m = c3.number_input("fib_m", 1, 10, 1, label_visibility="collapsed", key="f_m")
-    fib_d = c4.selectbox("fib_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="f_d")
+    fib_d = c4.selectbox("fib_d", ["Easy", "Medium", "Hard", "Mixed"], label_visibility="collapsed", key="f_d")
 
     # True/False Row
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     c1.write("True / False")
     tf_c = c2.number_input("tf_c", 0, 20, 3, label_visibility="collapsed", key="t_c")
     tf_m = c3.number_input("tf_m", 1, 10, 1, label_visibility="collapsed", key="t_m")
-    tf_d = c4.selectbox("tf_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="t_d")
+    tf_d = c4.selectbox("tf_d", ["Easy", "Medium", "Hard", "Mixed"], label_visibility="collapsed", key="t_d")
 
     # Short Row
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     c1.write("Short Answer")
     short_c = c2.number_input("sh_c", 0, 20, 3, label_visibility="collapsed", key="s_c")
     short_m = c3.number_input("sh_m", 1, 10, 2, label_visibility="collapsed", key="s_m")
-    short_d = c4.selectbox("sh_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="s_d", index=1)
+    short_d = c4.selectbox("sh_d", ["Easy", "Medium", "Hard", "Mixed"], label_visibility="collapsed", key="s_d", index=1)
 
     # Long Row
     c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
     c1.write("Long Answer")
     long_c = c2.number_input("l_c", 0, 20, 2, label_visibility="collapsed", key="l_c")
     long_m = c3.number_input("l_m", 1, 20, 5, label_visibility="collapsed", key="l_m")
-    long_d = c4.selectbox("l_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="l_d", index=2)
+    long_d = c4.selectbox("l_d", ["Easy", "Medium", "Hard","Mixed"], label_visibility="collapsed", key="l_d", index=2)
 
     total_q = mcq_c + fib_c + tf_c + short_c + long_c
     total_m = (mcq_c * mcq_m) + (fib_c * fib_m) + (tf_c * tf_m) + (short_c * short_m) + (long_c * long_m)
