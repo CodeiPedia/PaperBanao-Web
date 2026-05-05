@@ -146,7 +146,6 @@ else:
         st.sidebar.error("⚠️ Free Trial Expired!")
 
 st.sidebar.markdown("---")
-# BYOK Feature
 st.sidebar.header("⚙️ Advanced Settings")
 st.sidebar.write("Use your own free Gemini API Key when the server limit is reached.")
 user_api_key = st.sidebar.text_input("Your Gemini API Key (Optional)", type="password", help="Get your free key from Google AI Studio")
@@ -162,9 +161,9 @@ exam_time = st.sidebar.text_input("Exam Time", value="2 Hours")
 
 st.sidebar.markdown("---")
 st.sidebar.header("🏢 Footer Details")
-teacher_name = st.sidebar.text_input("Teacher Name", value="Mr. Suraj")
-inst_address = st.sidebar.text_input("Institute Address", value="NH-22 Education Lane, City")
-inst_contact = st.sidebar.text_input("Contact Number", value="+91 9310038172")
+teacher_name = st.sidebar.text_input("Teacher Name", value="Mr. Sharma")
+inst_address = st.sidebar.text_input("Institute Address", value="123 Education Lane, City")
+inst_contact = st.sidebar.text_input("Contact Number", value="+91 9876543210")
 
 st.sidebar.markdown("---")
 st.sidebar.header("📜 Formatting")
@@ -199,11 +198,11 @@ def extract_text_from_pdf(uploaded_file, start_page, end_page):
 
 def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answers, selected_language, subject):
     reqs = []
-    if mcq_c > 0: reqs.append(f"- {mcq_c} MCQs (Diff: {mcq_d}). [{mcq_m} Mark each]")
-    if fib_c > 0: reqs.append(f"- {fib_c} FIBs (Diff: {fib_d}). [{fib_m} Marks each]")
-    if tf_c > 0:  reqs.append(f"- {tf_c} True/False (Diff: {tf_d}). [{tf_m} Marks each]")
-    if short_c > 0: reqs.append(f"- {short_c} Short Q (Diff: {short_d}). [{short_m} Marks each]")
-    if long_c > 0:  reqs.append(f"- {long_c} Long Q (Diff: {long_d}). [{long_m} Marks each]")
+    if mcq_c > 0: reqs.append(f"## Multiple Choice Questions [{mcq_m} Mark(s) Each]\n- {mcq_c} MCQs (Difficulty: {mcq_d}).")
+    if fib_c > 0: reqs.append(f"## Fill in the Blanks [{fib_m} Mark(s) Each]\n- {fib_c} FIBs (Difficulty: {fib_d}). MUST include 4 options (A, B, C, D) on a new line for each blank.")
+    if tf_c > 0:  reqs.append(f"## True / False [{tf_m} Mark(s) Each]\n- {tf_c} True/False questions (Difficulty: {tf_d}). MUST include exactly 2 options: (A) True  (B) False on a new line.")
+    if short_c > 0: reqs.append(f"## Short Answer Questions [{short_m} Mark(s) Each]\n- {short_c} Short Qs (Difficulty: {short_d}).")
+    if long_c > 0:  reqs.append(f"## Long Answer Questions [{long_m} Mark(s) Each]\n- {long_c} Long Qs (Difficulty: {long_d}).")
     
     if selected_language == "English":
         lang_instruction = "LANGUAGE RULE: Generate the ENTIRE paper and answers strictly in the English language."
@@ -212,21 +211,22 @@ def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, 
     else:
         lang_instruction = "LANGUAGE RULE: Generate the paper in Hinglish (a mix of simple Hindi and English). Provide English terms in brackets for technical words."
     
-    # 🌟 FIX: Stricter prompting for Q-numbering and options layout
-    base_prompt = "\n".join(reqs) + f"\n\n{lang_instruction}\n\n" + f"""CRITICAL FORMATTING:
-1. STRICTLY adhere to the subject: **{subject}**. Do NOT generate general knowledge questions or questions from other subjects.
-2. START DIRECTLY WITH QUESTIONS. DO NOT GENERATE ANY INSTITUTE NAME, TIME, MARKS OR HEADER AT THE TOP.
-3. Separate every Question and Answer Key with delimiter: `|||` on a new line.
-4. MATH: USE UNICODE SYMBOLS ONLY (θ, π, √, ²). NO LaTeX. Write fractions as a/b.
-5. NUMBERING: Always start a question with **Q** followed by the number, e.g., **Q1.**, **Q2.**, etc. DO NOT use markdown lists like `1. ` or `* `.
-6. MCQs/FIBs OPTIONS: ALWAYS place the options on a NEW LINE below the question. Do NOT put them on the same line as the question.
-   Example:
+    # 🌟 FIX: Ultra-strict prompt for Continuous Numbering, New Line Options, and Detailed Answers
+    base_prompt = "\n\n".join(reqs) + f"\n\n{lang_instruction}\n\n" + f"""CRITICAL FORMATTING:
+1. STRICTLY adhere to the subject: **{subject}**. Do NOT generate general knowledge questions.
+2. CONTINUOUS NUMBERING: Number ALL questions continuously from start to finish (e.g., **Q1.**, **Q2.**, **Q3.**, etc.) across ALL sections. Do NOT restart numbering at 1 for a new section. 
+3. OPTIONS ON NEW LINE: For MCQs, FIBs, and T/F, ALWAYS place the options on a NEW LINE directly below the question text. Do NOT place options on the same line as the question.
+   Correct Example:
    **Q1.** What is the value of x?
    (A) 1   (B) 2   (C) 3   (D) 4
-7. DO NOT use special checkboxes like ☐, ☑, •, ◦. Use [ ] or (A).
+4. MARKS IN HEADERS: Include the marks per question in the section headers as provided above.
+5. DETAILED ANSWERS: In the Answer Key, provide detailed, step-by-step explanations for Short and Long answer questions, proportional to their marks (e.g., 5-mark questions need a long, detailed explanation). Ensure answer numbers match the continuous question numbers.
+6. DELIMITER: Separate EVERY single Question, Section Header, and the Answer Key with the delimiter `|||` on a new line. Do not group multiple questions together.
+7. MATH: USE UNICODE SYMBOLS ONLY (θ, π, √, ²). NO LaTeX. Write fractions as a/b.
+8. DO NOT generate any Title, Institute Name, Time, or Marks at the very top. Start directly with the first section header.
     """
     
-    if include_answers: return base_prompt + "\nAdd '# Answer Key' at end, also separated by `|||`. Use the requested language in answers too."
+    if include_answers: return base_prompt + "\nAdd '# ANSWER KEY' at end, also separated by `|||`. Ensure numbering in answers exactly matches the continuous numbering of the questions."
     return base_prompt
 
 def regenerate_single_question(old_text):
@@ -255,9 +255,8 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     md_content = re.sub(r"^\*\*Marks:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
     md_content = re.sub(r"^\*\*Time:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
     
-    # Optional: Fix any leftover markdown lists from AI output just in case
+    # Fix any rogue markdown lists into Q-format
     md_content = re.sub(r"^\d+\.\s", "**Q.** ", md_content, flags=re.MULTILINE)
-
     md_content = md_content.strip()
     
     logo_html_inline = ""
@@ -327,20 +326,22 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     
     col_style = "column-count: 2; column-gap: 15mm; column-rule: 1px solid #000; font-size: 14px;" if is_2_col else "font-size: 16px;"
 
-    # 🌟 FIX: Added CSS to handle spacing between paragraphs (questions) better
+    # 🌟 FIX: CSS updated to make watermark repeat on ALL pages in print mode
     return f"""<!DOCTYPE html><html><head><style>
     body {{ background: #f0f0f0; font-family: 'Times New Roman', serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} 
     .a4-page {{ background: white; width: 210mm; min-height: 297mm; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.2); box-sizing: border-box; position: relative; overflow: hidden; }} 
-    .watermark {{ position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 80px; color: rgba(0, 0, 0, 0.05); z-index: 0; pointer-events: none; white-space: nowrap; font-weight: bold; }}
+    .watermark {{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 85px; color: rgba(0, 0, 0, 0.06); z-index: -9999; pointer-events: none; white-space: nowrap; font-weight: bold; text-transform: uppercase; }}
     table {{ width: 100%; border-collapse: collapse; border: none; position: relative; z-index: 1; }}
     td {{ border: none; padding: 0; }}
     @media print {{ 
         @page {{ size: A4; margin: 0; }} 
         body {{ background: white; padding: 0; margin: 0; display: block; }} 
         .a4-page {{ box-shadow: none; width: 100%; min-height: auto; padding: 10mm; margin: 0; page-break-after: always; }} 
+        .watermark {{ color: rgba(0, 0, 0, 0.06) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
         tfoot {{ display: table-footer-group; }}
     }} 
     h1, h2, h3 {{ text-align: center; column-span: all; }} 
+    h2 {{ font-size: 16px; border-bottom: 1px dashed #ccc; padding-bottom: 5px; }}
     .content-body {{ {col_style} position: relative; z-index: 1; text-align: justify; }} 
     .content-body p {{ margin-bottom: 8px; margin-top: 4px; }}
     .footer-content {{ text-align: center; margin-top: 20px; padding-top: 10px; border-top: 2px dashed #bbb; font-size: 13px; color: #444; position: relative; z-index: 1; background: white; }}
