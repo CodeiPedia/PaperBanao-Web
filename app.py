@@ -162,9 +162,9 @@ exam_time = st.sidebar.text_input("Exam Time", value="2 Hours")
 
 st.sidebar.markdown("---")
 st.sidebar.header("🏢 Footer Details")
-teacher_name = st.sidebar.text_input("Teacher Name", value="Mr. Sharma")
-inst_address = st.sidebar.text_input("Institute Address", value="123 Education Lane, City")
-inst_contact = st.sidebar.text_input("Contact Number", value="+91 9876543210")
+teacher_name = st.sidebar.text_input("Teacher Name", value="Mr. Suraj")
+inst_address = st.sidebar.text_input("Institute Address", value="NH-22 Education Lane, City")
+inst_contact = st.sidebar.text_input("Contact Number", value="+91 9310038172")
 
 st.sidebar.markdown("---")
 st.sidebar.header("📜 Formatting")
