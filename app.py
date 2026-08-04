@@ -494,6 +494,8 @@ with col_logout:
         st.session_state.logged_in = False
         st.session_state.username = ""
         st.session_state.blocks = []
+        st.session_state.blocks_saved = True
+        st.session_state.confirm_overwrite = False
         st.rerun()
 
 # ==========================================
@@ -990,7 +992,20 @@ with tab_create:
     st.markdown("---")
     st.info(f"📊 Total Questions: {total_q} | 🏆 Maximum Marks: {total_m}")
 
-    if st.button("🚀 Generate Paper", use_container_width=True):
+    if "blocks_saved" not in st.session_state: st.session_state.blocks_saved = True
+    if "confirm_overwrite" not in st.session_state: st.session_state.confirm_overwrite = False
+
+    generate_clicked = st.button("🚀 Generate Paper", use_container_width=True)
+
+    if generate_clicked and st.session_state.blocks and not st.session_state.blocks_saved and not st.session_state.confirm_overwrite:
+        st.warning("You have an unsaved paper above (not saved to Cloud History yet). Generating a new one will replace it.")
+        if st.button("Generate anyway (discard current paper)", use_container_width=True):
+            st.session_state.confirm_overwrite = True
+            st.rerun()
+        generate_clicked = False
+
+    if generate_clicked and (not st.session_state.blocks or st.session_state.blocks_saved or st.session_state.confirm_overwrite):
+        st.session_state.confirm_overwrite = False
         if not sub.strip() or not grade.strip():
             st.error("Please fill in Subject and Class before generating.")
         elif total_q == 0:
@@ -1020,6 +1035,7 @@ with tab_create:
                         resp = model.generate_content(prompt)
                     blocks = resp.text.split("|||")
                     st.session_state.blocks = [{'id': str(uuid.uuid4()), 'text': b.strip()} for b in blocks if b.strip()]
+                    st.session_state.blocks_saved = False
                     st.session_state.file_name = f"{sub}_Paper"
                     update_paper_count(st.session_state.username)
                     st.rerun()
@@ -1033,9 +1049,22 @@ with tab_create:
 
     if st.session_state.blocks:
         st.markdown("---")
-        with st.expander("🛠️ Edit Questions"):
+        with st.expander("🛠️ Edit Questions", expanded=False):
             for i, b in enumerate(st.session_state.blocks):
-                st.session_state.blocks[i]['text'] = st.text_area(f"Block {i}", b['text'], height=100)
+                edit_col, regen_col = st.columns([5, 1])
+                new_text = edit_col.text_area(f"Question {i+1}", b['text'], height=100, key=f"block_text_{b['id']}")
+                if new_text != st.session_state.blocks[i]['text']:
+                    st.session_state.blocks[i]['text'] = new_text
+                    st.session_state.blocks_saved = False
+                if regen_col.button("🔄 Regenerate", key=f"regen_{b['id']}", help="Ask AI to write a fresh version of this question"):
+                    with st.spinner("Regenerating..."):
+                        try:
+                            st.session_state.blocks[i]['text'] = regenerate_single_question(b['text'], active_api_key, working_model_name)
+                            st.session_state.blocks_saved = False
+                            st.rerun()
+                        except Exception as e:
+                            print(f"[Regenerate Error] {e}")
+                            st.error("Couldn't regenerate this question. Please try again.")
         
         paper_md = "\n\n".join([b['text'] for b in st.session_state.blocks])
         
@@ -1047,16 +1076,54 @@ with tab_create:
         c2.download_button("📄 Word", f_word, f"{st.session_state.current_subject}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
         if c3.button("☁️ Save History"):
             data = {"username": st.session_state.username, "date": datetime.now().strftime("%Y-%m-%d"), "subject": st.session_state.current_subject, "board": board_format, "content": paper_md}
-            supabase.table("papers").insert(data).execute()
-            st.success("Saved!")
+            try:
+                supabase.table("papers").insert(data).execute()
+                st.session_state.blocks_saved = True
+                st.success("Saved!")
+            except Exception as e:
+                print(f"[Save History Error] {e}")
+                st.error("Couldn't save to Cloud History. Please try again.")
 
 with tab_history:
     st.markdown("### Cloud History")
-    res = supabase.table("papers").select("*").eq("username", st.session_state.username).order("id", desc=True).execute()
-    if res.data:
+    with st.spinner("Loading your saved papers..."):
+        try:
+            res = supabase.table("papers").select("*").eq("username", st.session_state.username).order("id", desc=True).execute()
+            history_error = None
+        except Exception as e:
+            print(f"[History Load Error] {e}")
+            res = None
+            history_error = "Couldn't load your history right now. Please refresh."
+
+    if history_error:
+        st.error(history_error)
+    elif res.data:
+        st.caption(f"{len(res.data)} saved paper(s)")
         for p in res.data:
             with st.expander(f"📄 {p['subject']} ({p['date']})"):
                 h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, p['subject'], "N/A", "N/A", exam_time, "")
-                st.download_button("Download HTML", h_html, f"History_{p['id']}.html", "text/html", key=f"h_{p['id']}")
-                if st.button("Delete", key=f"d_{p['id']}"):
-                    delete_paper(p['id'], st.session_state.username); st.rerun()
+                h_word = create_word_docx(p['content'], inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, p['subject'], "N/A", "N/A", exam_time, "")
+
+                dl1, dl2, dl3 = st.columns(3)
+                dl1.download_button("🖨️ HTML", h_html, f"History_{p['id']}.html", "text/html", key=f"h_{p['id']}")
+                dl2.download_button("📄 Word", h_word, f"History_{p['id']}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"w_{p['id']}")
+
+                confirm_key = f"confirm_del_{p['id']}"
+                if confirm_key not in st.session_state: st.session_state[confirm_key] = False
+
+                if not st.session_state[confirm_key]:
+                    if dl3.button("🗑️ Delete", key=f"d_{p['id']}"):
+                        st.session_state[confirm_key] = True
+                        st.rerun()
+                else:
+                    st.warning("Delete this paper permanently?")
+                    yc, nc = st.columns(2)
+                    if yc.button("Yes, delete", key=f"yd_{p['id']}"):
+                        delete_paper(p['id'], st.session_state.username)
+                        st.session_state[confirm_key] = False
+                        st.rerun()
+                    if nc.button("Cancel", key=f"nd_{p['id']}"):
+                        st.session_state[confirm_key] = False
+                        st.rerun()
+    else:
+        st.info("No saved papers yet — generate one and click '☁️ Save History' to keep it here.")
