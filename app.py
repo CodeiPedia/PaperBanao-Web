@@ -1059,7 +1059,13 @@ with tab_create:
                 if regen_col.button("🔄 Regenerate", key=f"regen_{b['id']}", help="Ask AI to write a fresh version of this question"):
                     with st.spinner("Regenerating..."):
                         try:
-                            st.session_state.blocks[i]['text'] = regenerate_single_question(b['text'], active_api_key, working_model_name)
+                            new_q_text = regenerate_single_question(b['text'], active_api_key, working_model_name)
+                            st.session_state.blocks[i]['text'] = new_q_text
+                            # Assign a fresh id so the text_area widget below gets a new
+                            # key on rerun — reusing the old key would keep showing the
+                            # old text, since Streamlit widgets ignore new default values
+                            # once a key already has a stored value.
+                            st.session_state.blocks[i]['id'] = str(uuid.uuid4())
                             st.session_state.blocks_saved = False
                             st.rerun()
                         except Exception as e:
