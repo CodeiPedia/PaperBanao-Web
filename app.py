@@ -14,6 +14,8 @@ import time
 import random
 import smtplib
 import razorpay
+from xhtml2pdf import pisa
+from PIL import Image
 from email.mime.text import MIMEText
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
@@ -46,6 +48,14 @@ def init_supabase():
         return None
 
 supabase: Client = init_supabase()
+
+class StoredLogo(BytesIO):
+    """Wraps logo bytes fetched from the DB so it behaves like a Streamlit
+    UploadedFile (.seek(), .getvalue(), .type) — lets create_a4_html /
+    create_word_docx use a saved default logo without any changes."""
+    def __init__(self, data: bytes, mimetype: str):
+        super().__init__(data)
+        self.type = mimetype
 
 # --- INITIALIZE RAZORPAY CLIENT ---
 @st.cache_resource
@@ -164,6 +174,41 @@ def delete_paper(paper_id, username):
     except Exception as e:
         print(f"[delete_paper Error] {e}")
         st.error("Couldn't delete that paper. Please try again.")
+
+# --- INSTITUTION DEFAULTS (saved letterhead/footer/language settings) ---
+def get_institution_defaults(username):
+    try:
+        res = supabase.table("users").select(
+            "default_inst_name, default_inst_address, default_inst_contact, "
+            "default_teacher_name, default_paper_language, default_board_format, "
+            "default_logo_base64, default_logo_mimetype"
+        ).eq("username", username).execute()
+        if res.data:
+            return res.data[0]
+    except Exception as e:
+        print(f"[get_institution_defaults Error] {e}")
+    return {}
+
+def save_institution_defaults(username, inst_name, inst_address, inst_contact, teacher_name,
+                               paper_language, board_format, logo_bytes=None, logo_mimetype=None):
+    try:
+        update_data = {
+            "default_inst_name": inst_name,
+            "default_inst_address": inst_address,
+            "default_inst_contact": inst_contact,
+            "default_teacher_name": teacher_name,
+            "default_paper_language": paper_language,
+            "default_board_format": board_format,
+        }
+        # Only overwrite the saved logo if a new one was uploaded this session
+        if logo_bytes is not None:
+            update_data["default_logo_base64"] = base64.b64encode(logo_bytes).decode()
+            update_data["default_logo_mimetype"] = logo_mimetype
+        supabase.table("users").update(update_data).eq("username", username).execute()
+        return True
+    except Exception as e:
+        print(f"[save_institution_defaults Error] {e}")
+        return False
 
 # --- PASSWORD RESET (Email OTP) ---
 def send_otp_email(to_email, otp):
@@ -496,6 +541,7 @@ with col_logout:
         st.session_state.blocks = []
         st.session_state.blocks_saved = True
         st.session_state.confirm_overwrite = False
+        if "inst_defaults" in st.session_state: del st.session_state["inst_defaults"]
         st.rerun()
 
 # ==========================================
@@ -537,22 +583,57 @@ if user_api_key:
 
 st.sidebar.markdown("---")
 st.sidebar.header("🏫 Institute Details")
-inst_logo = st.sidebar.file_uploader("Upload Logo", type=["png", "jpg", "jpeg"])
-inst_name = st.sidebar.text_input("Institute Name", value="My Success Academy")
+
+# Load saved defaults once per session (avoid refetching on every rerun)
+if "inst_defaults" not in st.session_state:
+    st.session_state.inst_defaults = get_institution_defaults(st.session_state.username)
+_d = st.session_state.inst_defaults
+
+inst_logo_upload = st.sidebar.file_uploader("Upload Logo", type=["png", "jpg", "jpeg"], help="Leave empty to keep your saved default logo")
+inst_name = st.sidebar.text_input("Institute Name", value=_d.get("default_inst_name") or "My Success Academy")
 exam_time = st.sidebar.text_input("Exam Time", value="2 Hours")
 
 st.sidebar.markdown("---")
 st.sidebar.header("🏢 Footer Details")
-teacher_name = st.sidebar.text_input("Teacher Name", value="Mr. Suraj")
-inst_address = st.sidebar.text_input("Institute Address", value="NH-22 Education Lane, City")
-inst_contact = st.sidebar.text_input("Contact Number", value="+91 9310038172")
+teacher_name = st.sidebar.text_input("Teacher Name", value=_d.get("default_teacher_name") or "Mr. Suraj")
+inst_address = st.sidebar.text_input("Institute Address", value=_d.get("default_inst_address") or "NH-22 Education Lane, City")
+inst_contact = st.sidebar.text_input("Contact Number", value=_d.get("default_inst_contact") or "+91 9310038172")
 
 st.sidebar.markdown("---")
 st.sidebar.header("📜 Formatting")
-board_format = st.sidebar.selectbox("Board Pattern", ["Standard", "BSEB (Bihar Board)", "CBSE", "ICSE"])
-paper_language = st.sidebar.selectbox("Paper Language", ["English", "Hindi", "Bilingual"])
+_board_options = ["Standard", "BSEB (Bihar Board)", "CBSE", "ICSE"]
+_lang_options = ["English", "Hindi", "Bilingual"]
+board_format = st.sidebar.selectbox("Board Pattern", _board_options,
+    index=_board_options.index(_d["default_board_format"]) if _d.get("default_board_format") in _board_options else 0)
+paper_language = st.sidebar.selectbox("Paper Language", _lang_options,
+    index=_lang_options.index(_d["default_paper_language"]) if _d.get("default_paper_language") in _lang_options else 0)
 include_answer_key = st.sidebar.toggle("Include Answer Key", value=True)
-is_two_column = st.sidebar.toggle("📄 Two-Column Format", value=True) 
+is_two_column = st.sidebar.toggle("📄 Two-Column Format", value=True)
+
+if st.sidebar.button("💾 Save these as my Default", use_container_width=True):
+    logo_bytes, logo_mimetype = None, None
+    if inst_logo_upload is not None:
+        inst_logo_upload.seek(0)
+        logo_bytes = inst_logo_upload.getvalue()
+        logo_mimetype = inst_logo_upload.type
+    if save_institution_defaults(st.session_state.username, inst_name, inst_address, inst_contact,
+                                  teacher_name, paper_language, board_format, logo_bytes, logo_mimetype):
+        st.session_state.inst_defaults = get_institution_defaults(st.session_state.username)
+        st.sidebar.success("Saved! These will auto-fill next time you log in.")
+    else:
+        st.sidebar.error("Couldn't save your defaults. Please try again.")
+
+# Resolve which logo to actually use this run: a fresh upload wins,
+# otherwise fall back to the saved default logo (if any).
+if inst_logo_upload is not None:
+    inst_logo = inst_logo_upload
+elif _d.get("default_logo_base64"):
+    try:
+        inst_logo = StoredLogo(base64.b64decode(_d["default_logo_base64"]), _d.get("default_logo_mimetype") or "image/png")
+    except Exception:
+        inst_logo = None
+else:
+    inst_logo = None
 
 # ==========================================
 # --- API CONFIGURATION LOGIC ---
@@ -748,6 +829,19 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     </table>
     </div></body></html>"""
 
+def html_to_pdf(html_string):
+    """Converts our A4 HTML paper into PDF bytes. Returns None on failure
+    (xhtml2pdf can be picky about some CSS — caller should handle None)."""
+    try:
+        buf = BytesIO()
+        result = pisa.CreatePDF(html_string, dest=buf)
+        if result.err:
+            return None
+        return buf.getvalue()
+    except Exception as e:
+        print(f"[PDF Generation Error] {e}")
+        return None
+
 # 🌟 WORD RENDERER 🌟
 def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo=None, is_2_col=False, sub="Subject", grade="Class", total_m="Marks", exam_time="Time", topics=""):
     doc = Document()
@@ -912,7 +1006,7 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
 # ==========================================
 # --- MAIN LAYOUT ---
 # ==========================================
-tab_create, tab_history = st.tabs(["🏠 Create Paper", "🗂️ Cloud History"])
+tab_create, tab_digitize, tab_history = st.tabs(["🏠 Create Paper", "📷 Digitize Handwritten", "🗂️ Cloud History"])
 
 with tab_create:
     if not is_pro and papers_used >= FREE_LIMIT:
@@ -1077,10 +1171,15 @@ with tab_create:
         f_html = create_a4_html(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, st.session_state.current_subject, st.session_state.current_class, st.session_state.current_marks, exam_time, syl)
         f_word = create_word_docx(paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, st.session_state.current_subject, st.session_state.current_class, st.session_state.current_marks, exam_time, syl)
         
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4)
         c1.download_button("🖨️ HTML", f_html, f"{st.session_state.current_subject}.html", "text/html")
         c2.download_button("📄 Word", f_word, f"{st.session_state.current_subject}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-        if c3.button("☁️ Save History"):
+        f_pdf = html_to_pdf(f_html)
+        if f_pdf:
+            c3.download_button("📕 PDF", f_pdf, f"{st.session_state.current_subject}.pdf", "application/pdf")
+        else:
+            c3.caption("PDF unavailable")
+        if c4.button("☁️ Save History"):
             data = {"username": st.session_state.username, "date": datetime.now().strftime("%Y-%m-%d"), "subject": st.session_state.current_subject, "board": board_format, "content": paper_md}
             try:
                 supabase.table("papers").insert(data).execute()
@@ -1088,6 +1187,83 @@ with tab_create:
                 st.success("Saved!")
             except Exception as e:
                 print(f"[Save History Error] {e}")
+                st.error("Couldn't save to Cloud History. Please try again.")
+
+with tab_digitize:
+    st.markdown("### 📷 Digitize a Handwritten Paper")
+    st.caption("Upload photos of a handwritten or scanned question paper — we'll read it and turn it into a clean, formatted digital paper using your saved institute details.")
+
+    if "digi_blocks" not in st.session_state: st.session_state.digi_blocks = []
+    if "digi_saved" not in st.session_state: st.session_state.digi_saved = True
+
+    digi_images = st.file_uploader("Upload page photos (one or more, in order)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="digi_uploader")
+    dcol1, dcol2 = st.columns(2)
+    digi_subject = dcol1.text_input("Subject", key="digi_subject", placeholder="e.g. Mathematics")
+    digi_class = dcol2.text_input("Class", key="digi_class", placeholder="e.g. Class 10")
+
+    if st.button("📷 Digitize Paper", use_container_width=True):
+        if not digi_images:
+            st.error("Please upload at least one photo of the paper.")
+        elif not is_pro and papers_used >= FREE_LIMIT:
+            st.error("⚠️ Free Trial Expired! Upgrade to Pro from the sidebar to keep generating/digitizing papers.")
+        else:
+            with st.spinner("Reading your paper... this can take a moment for multiple pages."):
+                try:
+                    digi_prompt = (
+                        "You are digitizing a handwritten or scanned question paper from the attached image(s). "
+                        "Transcribe it faithfully — preserve the original question numbering, order, sections, and "
+                        "marks exactly as written. Do not invent new questions, do not change the meaning, and do not "
+                        "add a title, institute name, header, or footer. Only fix obvious spelling/OCR mistakes. "
+                        "Separate each distinct question with the delimiter ||| on its own line."
+                    )
+                    contents = [digi_prompt] + [Image.open(f) for f in digi_images]
+                    with GEMINI_LOCK:
+                        genai.configure(api_key=active_api_key)
+                        model = genai.GenerativeModel(working_model_name)
+                        resp = model.generate_content(contents)
+                    d_blocks = resp.text.split("|||")
+                    st.session_state.digi_blocks = [{'id': str(uuid.uuid4()), 'text': b.strip()} for b in d_blocks if b.strip()]
+                    st.session_state.digi_saved = False
+                    update_paper_count(st.session_state.username)
+                    st.rerun()
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    print(f"[Digitize Error] {e}")
+                    if "429" in error_msg or "quota" in error_msg:
+                        st.error("🚨 The daily generation limit has been reached! Try again later or add your own API key in Advanced Settings.")
+                    else:
+                        st.error("Couldn't read that paper. Try clearer/well-lit photos, or fewer pages at once.")
+
+    if st.session_state.digi_blocks:
+        st.markdown("---")
+        st.success(f"Read {len(st.session_state.digi_blocks)} question(s). Review and fix anything the OCR missed below.")
+        with st.expander("🛠️ Review & Edit", expanded=True):
+            for i, b in enumerate(st.session_state.digi_blocks):
+                new_text = st.text_area(f"Question {i+1}", b['text'], height=100, key=f"digi_text_{b['id']}")
+                if new_text != st.session_state.digi_blocks[i]['text']:
+                    st.session_state.digi_blocks[i]['text'] = new_text
+                    st.session_state.digi_saved = False
+
+        digi_md = "\n\n".join([b['text'] for b in st.session_state.digi_blocks])
+        digi_html = create_a4_html(digi_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, digi_subject or "Digitized Paper", digi_class or "N/A", "N/A", exam_time, "")
+        digi_word = create_word_docx(digi_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, digi_subject or "Digitized Paper", digi_class or "N/A", "N/A", exam_time, "")
+
+        gc1, gc2, gc3, gc4 = st.columns(4)
+        gc1.download_button("🖨️ HTML", digi_html, f"{digi_subject or 'Digitized'}_Paper.html", "text/html")
+        gc2.download_button("📄 Word", digi_word, f"{digi_subject or 'Digitized'}_Paper.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        digi_pdf = html_to_pdf(digi_html)
+        if digi_pdf:
+            gc3.download_button("📕 PDF", digi_pdf, f"{digi_subject or 'Digitized'}_Paper.pdf", "application/pdf")
+        else:
+            gc3.caption("PDF unavailable")
+        if gc4.button("☁️ Save History", key="digi_save_history"):
+            data = {"username": st.session_state.username, "date": datetime.now().strftime("%Y-%m-%d"), "subject": digi_subject or "Digitized Paper", "board": "Digitized", "content": digi_md}
+            try:
+                supabase.table("papers").insert(data).execute()
+                st.session_state.digi_saved = True
+                st.success("Saved!")
+            except Exception as e:
+                print(f"[Digitize Save History Error] {e}")
                 st.error("Couldn't save to Cloud History. Please try again.")
 
 with tab_history:
@@ -1110,15 +1286,20 @@ with tab_history:
                 h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, p['subject'], "N/A", "N/A", exam_time, "")
                 h_word = create_word_docx(p['content'], inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, p['subject'], "N/A", "N/A", exam_time, "")
 
-                dl1, dl2, dl3 = st.columns(3)
+                dl1, dl2, dl3, dl4 = st.columns(4)
                 dl1.download_button("🖨️ HTML", h_html, f"History_{p['id']}.html", "text/html", key=f"h_{p['id']}")
                 dl2.download_button("📄 Word", h_word, f"History_{p['id']}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"w_{p['id']}")
+                h_pdf = html_to_pdf(h_html)
+                if h_pdf:
+                    dl3.download_button("📕 PDF", h_pdf, f"History_{p['id']}.pdf", "application/pdf", key=f"pdf_{p['id']}")
+                else:
+                    dl3.caption("PDF unavailable")
 
                 confirm_key = f"confirm_del_{p['id']}"
                 if confirm_key not in st.session_state: st.session_state[confirm_key] = False
 
                 if not st.session_state[confirm_key]:
-                    if dl3.button("🗑️ Delete", key=f"d_{p['id']}"):
+                    if dl4.button("🗑️ Delete", key=f"d_{p['id']}"):
                         st.session_state[confirm_key] = True
                         st.rerun()
                 else:
