@@ -5,3 +5,4 @@ Markdown
 python-docx
 supabase
 bcrypt
+razorpay
