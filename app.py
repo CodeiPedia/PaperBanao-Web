@@ -8,6 +8,9 @@ import re
 import uuid
 import hashlib
 import base64
+import bcrypt
+import threading
+import time
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -40,35 +43,91 @@ def init_supabase():
 
 supabase: Client = init_supabase()
 
+# --- CONCURRENCY LOCK ---
+# google.generativeai's genai.configure() sets a PROCESS-WIDE global.
+# Streamlit runs concurrent users in separate threads of the SAME process,
+# so without this lock, two users generating a paper at the same moment
+# could end up using each other's API keys. This lock forces the
+# configure -> generate sequence to run atomically, one request at a time.
+GEMINI_LOCK = threading.Lock()
+
 # --- DB HELPER FUNCTIONS ---
 def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+    """bcrypt with a per-password salt (replaces old unsalted SHA-256)."""
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+def verify_password(password, stored_hash):
+    """Verifies against bcrypt hashes, with a fallback for legacy SHA-256
+    hashes created before this update. Legacy accounts are transparently
+    upgraded to bcrypt on their next successful login."""
+    if stored_hash.startswith("$2b$") or stored_hash.startswith("$2a$"):
+        try:
+            return bcrypt.checkpw(password.encode(), stored_hash.encode())
+        except ValueError:
+            return False
+    # Legacy SHA-256 hash (64 hex chars, no bcrypt prefix)
+    legacy_hash = hashlib.sha256(password.encode()).hexdigest()
+    return legacy_hash == stored_hash
 
 def create_user(username, password):
+    username = username.strip()
     try:
+        # Case-insensitive uniqueness check to prevent "Suraj" / "suraj" duplicates
+        existing = supabase.table("users").select("username").ilike("username", username).execute()
+        if existing.data:
+            return False
         data = {"username": username, "password": hash_password(password), "papers_generated": 0, "is_pro": False}
-        res = supabase.table("users").insert(data).execute()
+        supabase.table("users").insert(data).execute()
         return True
     except Exception as e:
-        st.error(f"Signup Error: {e}")
+        print(f"[Signup Error] {e}")  # log server-side, don't leak details to the user
+        st.error("Something went wrong creating your account. Please try again.")
         return False
 
 def authenticate_user(username, password):
-    res = supabase.table("users").select("*").eq("username", username).eq("password", hash_password(password)).execute()
-    if len(res.data) > 0: return res.data[0]
-    return None
+    username = username.strip()
+    try:
+        res = supabase.table("users").select("*").eq("username", username).execute()
+    except Exception as e:
+        print(f"[Auth Error] {e}")
+        st.error("Login is temporarily unavailable. Please try again shortly.")
+        return None
+    if not res.data:
+        return None
+    user = res.data[0]
+    if not verify_password(password, user["password"]):
+        return None
+    # Transparently upgrade legacy SHA-256 accounts to bcrypt
+    if not (user["password"].startswith("$2b$") or user["password"].startswith("$2a$")):
+        try:
+            supabase.table("users").update({"password": hash_password(password)}).eq("username", username).execute()
+        except Exception:
+            pass
+    return user
 
 def get_user_data(username):
-    res = supabase.table("users").select("papers_generated, is_pro").eq("username", username).execute()
-    if len(res.data) > 0: return (res.data[0]["papers_generated"], res.data[0]["is_pro"])
+    try:
+        res = supabase.table("users").select("papers_generated, is_pro").eq("username", username).execute()
+        if len(res.data) > 0: return (res.data[0]["papers_generated"], res.data[0]["is_pro"])
+    except Exception as e:
+        print(f"[get_user_data Error] {e}")
     return (0, False)
 
 def update_paper_count(username):
-    current_count, _ = get_user_data(username)
-    supabase.table("users").update({"papers_generated": current_count + 1}).eq("username", username).execute()
+    try:
+        current_count, _ = get_user_data(username)
+        supabase.table("users").update({"papers_generated": current_count + 1}).eq("username", username).execute()
+    except Exception as e:
+        print(f"[update_paper_count Error] {e}")
 
-def delete_paper(paper_id):
-    supabase.table("papers").delete().eq("id", paper_id).execute()
+def delete_paper(paper_id, username):
+    # Scope the delete to the logged-in user so one account can never
+    # delete another account's saved paper by guessing/tampering with an id.
+    try:
+        supabase.table("papers").delete().eq("id", paper_id).eq("username", username).execute()
+    except Exception as e:
+        print(f"[delete_paper Error] {e}")
+        st.error("Couldn't delete that paper. Please try again.")
 
 # --- INITIALIZE SESSION STATE ---
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
@@ -78,6 +137,8 @@ if "file_name" not in st.session_state: st.session_state.file_name = "PaperBanao
 if "current_subject" not in st.session_state: st.session_state.current_subject = "Unknown Subject"
 if "current_class" not in st.session_state: st.session_state.current_class = ""
 if "current_marks" not in st.session_state: st.session_state.current_marks = ""
+if "login_attempts" not in st.session_state: st.session_state.login_attempts = 0
+if "login_locked_until" not in st.session_state: st.session_state.login_locked_until = 0
 
 # ==========================================
 # --- 🔐 LOGIN & SIGNUP UI ---
@@ -96,19 +157,36 @@ if not st.session_state.logged_in:
     with t_login:
         l_user = st.text_input("Username", key="l_user")
         l_pass = st.text_input("Password", type="password", key="l_pass")
-        if st.button("Login", use_container_width=True):
+
+        locked_remaining = st.session_state.login_locked_until - time.time()
+        if locked_remaining > 0:
+            st.error(f"Too many failed attempts. Try again in {int(locked_remaining)}s.")
+        elif st.button("Login", use_container_width=True):
             user = authenticate_user(l_user, l_pass)
             if user:
                 st.session_state.logged_in = True
-                st.session_state.username = l_user
+                st.session_state.username = user["username"]
+                st.session_state.login_attempts = 0
                 st.rerun()
-            else: st.error("Invalid Username or Password")
+            else:
+                st.session_state.login_attempts += 1
+                if st.session_state.login_attempts >= 5:
+                    st.session_state.login_locked_until = time.time() + 60
+                    st.session_state.login_attempts = 0
+                    st.error("Too many failed attempts. Locked for 60s.")
+                else:
+                    st.error("Invalid Username or Password")
                 
     with t_signup:
         s_user = st.text_input("New Username", key="s_user")
         s_pass = st.text_input("New Password", type="password", key="s_pass")
         if st.button("Create Account & Get 5 Free Papers", use_container_width=True):
-            if len(s_user) < 3 or len(s_pass) < 4: st.error("Username (>2) and Password (>3) must be longer.")
+            if len(s_user.strip()) < 3:
+                st.error("Username must be at least 3 characters.")
+            elif len(s_pass) < 6:
+                st.error("Password must be at least 6 characters.")
+            elif not re.match(r'^[A-Za-z0-9_.]+$', s_user.strip()):
+                st.error("Username can only contain letters, numbers, underscores, and dots.")
             else:
                 if create_user(s_user, s_pass): st.success("Account created successfully! Please Login.")
                 else: st.error("Username already exists. Choose another.")
@@ -177,14 +255,22 @@ is_two_column = st.sidebar.toggle("📄 Two-Column Format", value=True)
 # --- API CONFIGURATION LOGIC ---
 # ==========================================
 active_api_key = user_api_key if user_api_key.strip() != "" else SERVER_API_KEY
-genai.configure(api_key=active_api_key)
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_working_model_name(api_key):
+    """Cached for 1 hour per API key so we don't hit list_models() on every
+    single UI interaction (button click, text input, etc all trigger a
+    full Streamlit rerun)."""
+    with GEMINI_LOCK:
+        genai.configure(api_key=api_key)
+        valid_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    flash_models = [m for m in valid_models if '1.5-flash' in m]
+    return flash_models[0] if flash_models else valid_models[0]
 
 try:
-    valid_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    flash_models = [m for m in valid_models if '1.5-flash' in m]
-    working_model_name = flash_models[0] if flash_models else valid_models[0]
-except Exception as e: 
-    working_model_name = "gemini-1.5-flash" 
+    working_model_name = get_working_model_name(active_api_key)
+except Exception:
+    working_model_name = "gemini-1.5-flash"
     if user_api_key:
         st.sidebar.error("❌ Invalid API Key. Please check your entry.")
 
@@ -229,10 +315,12 @@ def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, 
     if include_answers: return base_prompt + "\nAdd '# Answer Key' at end, also separated by `|||`. Use the requested language in answers too."
     return base_prompt
 
-def regenerate_single_question(old_text):
+def regenerate_single_question(old_text, api_key, model_name):
     prompt = f"Generate a NEW question to replace this. Keep the original language style. Use Unicode math symbols (θ, π, √, ²). ONLY output the question text:\n{old_text}"
-    model = genai.GenerativeModel(working_model_name)
-    return model.generate_content(prompt).text.strip()
+    with GEMINI_LOCK:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name)
+        return model.generate_content(prompt).text.strip()
 
 def clean_math_for_word(text):
     text = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'(\1)/(\2)', text)
@@ -602,34 +690,45 @@ with tab_create:
     st.info(f"📊 Total Questions: {total_q} | 🏆 Maximum Marks: {total_m}")
 
     if st.button("🚀 Generate Paper", use_container_width=True):
-        st.session_state.current_subject = sub
-        st.session_state.current_class = grade
-        st.session_state.current_marks = str(total_m)
-        
-        q_reqs = build_question_prompt(
-            mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answer_key, paper_language, sub
-        )
-        
-        if source == "📄 PDF Extract" and pdf_text != "":
-            prompt = f"Subject: {sub}\nClass: {grade}\nTopics: {syl}\n\n{q_reqs}\n\nIMPORTANT: Start directly with the questions. DO NOT generate any Title, Institute Name, Time, or Marks at the top.\n\nCREATE QUESTIONS STRICTLY FROM THE FOLLOWING TEXT EXTRACTED FROM A BOOK:\n\n{pdf_text}"
+        if not sub.strip() or not grade.strip():
+            st.error("Please fill in Subject and Class before generating.")
+        elif total_q == 0:
+            st.error("Please add at least one question (set a count > 0 for some question type).")
         else:
-            prompt = f"Subject: {sub}\nClass: {grade}\nTopics: {syl}\n\n{q_reqs}\n\nIMPORTANT: Start directly with the questions. DO NOT generate any Title, Institute Name, Time, or Marks at the top."
-        
-        with st.spinner("Generating Paper..."):
-            try:
-                model = genai.GenerativeModel(working_model_name)
-                resp = model.generate_content(prompt)
-                blocks = resp.text.split("|||")
-                st.session_state.blocks = [{'id': str(uuid.uuid4()), 'text': b.strip()} for b in blocks if b.strip()]
-                st.session_state.file_name = f"{sub}_Paper"
-                update_paper_count(st.session_state.username)
-                st.rerun()
-            except Exception as e:
-                error_msg = str(e).lower()
-                if "429" in error_msg or "quota" in error_msg:
-                    st.error("🚨 The server's daily limit has been reached!")
-                else:
-                    st.error(f"Error: {e}")
+            st.session_state.current_subject = sub
+            st.session_state.current_class = grade
+            st.session_state.current_marks = str(total_m)
+
+            q_reqs = build_question_prompt(
+                mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answer_key, paper_language, sub
+            )
+
+            if source == "📄 PDF Extract" and pdf_text != "":
+                prompt = f"Subject: {sub}\nClass: {grade}\nTopics: {syl}\n\n{q_reqs}\n\nIMPORTANT: Start directly with the questions. DO NOT generate any Title, Institute Name, Time, or Marks at the top.\n\nCREATE QUESTIONS STRICTLY FROM THE FOLLOWING TEXT EXTRACTED FROM A BOOK:\n\n{pdf_text}"
+            else:
+                prompt = f"Subject: {sub}\nClass: {grade}\nTopics: {syl}\n\n{q_reqs}\n\nIMPORTANT: Start directly with the questions. DO NOT generate any Title, Institute Name, Time, or Marks at the top."
+
+            with st.spinner("Generating Paper..."):
+                try:
+                    # Locked so another user's concurrent request can't run
+                    # with this session's API key (or vice versa) — see
+                    # GEMINI_LOCK definition for why this matters.
+                    with GEMINI_LOCK:
+                        genai.configure(api_key=active_api_key)
+                        model = genai.GenerativeModel(working_model_name)
+                        resp = model.generate_content(prompt)
+                    blocks = resp.text.split("|||")
+                    st.session_state.blocks = [{'id': str(uuid.uuid4()), 'text': b.strip()} for b in blocks if b.strip()]
+                    st.session_state.file_name = f"{sub}_Paper"
+                    update_paper_count(st.session_state.username)
+                    st.rerun()
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    print(f"[Generation Error] {e}")  # full detail server-side only
+                    if "429" in error_msg or "quota" in error_msg:
+                        st.error("🚨 The daily generation limit has been reached! Try again later or add your own API key in Advanced Settings.")
+                    else:
+                        st.error("Something went wrong generating the paper. Please try again.")
 
     if st.session_state.blocks:
         st.markdown("---")
@@ -659,4 +758,4 @@ with tab_history:
                 h_html = create_a4_html(p['content'], inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, p['subject'], "N/A", "N/A", exam_time, "")
                 st.download_button("Download HTML", h_html, f"History_{p['id']}.html", "text/html", key=f"h_{p['id']}")
                 if st.button("Delete", key=f"d_{p['id']}"):
-                    delete_paper(p['id']); st.rerun()
+                    delete_paper(p['id'], st.session_state.username); st.rerun()
