@@ -3,7 +3,7 @@ import google.generativeai as genai
 import PyPDF2
 import os
 import markdown
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import re
 import uuid
 import hashlib
@@ -11,6 +11,9 @@ import base64
 import bcrypt
 import threading
 import time
+import random
+import smtplib
+from email.mime.text import MIMEText
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -69,20 +72,22 @@ def verify_password(password, stored_hash):
     legacy_hash = hashlib.sha256(password.encode()).hexdigest()
     return legacy_hash == stored_hash
 
-def create_user(username, password):
+def create_user(username, password, email):
     username = username.strip()
+    email = email.strip().lower()
     try:
-        # Case-insensitive uniqueness check to prevent "Suraj" / "suraj" duplicates
         existing = supabase.table("users").select("username").ilike("username", username).execute()
         if existing.data:
-            return False
-        data = {"username": username, "password": hash_password(password), "papers_generated": 0, "is_pro": False}
+            return False, "Username already exists. Choose another."
+        existing_email = supabase.table("users").select("username").ilike("email", email).execute()
+        if existing_email.data:
+            return False, "An account with this email already exists."
+        data = {"username": username, "password": hash_password(password), "email": email, "papers_generated": 0, "is_pro": False}
         supabase.table("users").insert(data).execute()
-        return True
+        return True, "Account created successfully! Please Login."
     except Exception as e:
         print(f"[Signup Error] {e}")  # log server-side, don't leak details to the user
-        st.error("Something went wrong creating your account. Please try again.")
-        return False
+        return False, "Something went wrong creating your account. Please try again."
 
 def authenticate_user(username, password):
     username = username.strip()
@@ -129,6 +134,106 @@ def delete_paper(paper_id, username):
         print(f"[delete_paper Error] {e}")
         st.error("Couldn't delete that paper. Please try again.")
 
+# --- PASSWORD RESET (Email OTP) ---
+def send_otp_email(to_email, otp):
+    try:
+        smtp_host = st.secrets.get("SMTP_HOST", "smtp.gmail.com")
+        smtp_port = int(st.secrets.get("SMTP_PORT", 465))
+        smtp_user = st.secrets["SMTP_USER"]
+        smtp_pass = st.secrets["SMTP_PASSWORD"]
+
+        msg = MIMEText(
+            f"Your PaperBanao password reset code is: {otp}\n\n"
+            f"This code expires in 10 minutes. If you didn't request this, you can ignore this email."
+        )
+        msg["Subject"] = "PaperBanao - Password Reset Code"
+        msg["From"] = smtp_user
+        msg["To"] = to_email
+
+        with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_user, [to_email], msg.as_string())
+        return True
+    except Exception as e:
+        print(f"[Email Send Error] {e}")
+        return False
+
+def request_password_reset(identifier):
+    """identifier can be a username or an email. Returns (ok, message).
+    Deliberately doesn't reveal whether the account exists, to avoid
+    leaking which usernames/emails are registered."""
+    identifier = identifier.strip()
+    generic_msg = "If that account exists, a reset code has been sent to its registered email."
+    try:
+        res = supabase.table("users").select("username, email") \
+            .or_(f"username.eq.{identifier},email.eq.{identifier.lower()}").execute()
+    except Exception as e:
+        print(f"[Reset Lookup Error] {e}")
+        return False, "Something went wrong. Please try again."
+
+    if not res.data:
+        return True, generic_msg  # don't reveal non-existence
+
+    user = res.data[0]
+    if not user.get("email"):
+        # Legacy account created before email was required
+        return False, "This account has no email on file. Please contact support to reset it."
+
+    otp = f"{random.randint(0, 999999):06d}"
+    otp_hash = hash_password(otp)  # reuse the same bcrypt hashing as passwords
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+
+    try:
+        supabase.table("users").update({
+            "reset_otp": otp_hash,
+            "reset_otp_expires": expires_at
+        }).eq("username", user["username"]).execute()
+    except Exception as e:
+        print(f"[Reset Store Error] {e}")
+        return False, "Something went wrong. Please try again."
+
+    if send_otp_email(user["email"], otp):
+        return True, generic_msg
+    else:
+        return False, "Couldn't send the reset email right now. Please try again shortly."
+
+def verify_and_reset_password(identifier, otp, new_password):
+    identifier = identifier.strip()
+    try:
+        res = supabase.table("users").select("username, reset_otp, reset_otp_expires") \
+            .or_(f"username.eq.{identifier},email.eq.{identifier.lower()}").execute()
+    except Exception as e:
+        print(f"[Reset Verify Error] {e}")
+        return False, "Something went wrong. Please try again."
+
+    if not res.data:
+        return False, "Incorrect code or account."
+
+    user = res.data[0]
+    if not user.get("reset_otp") or not user.get("reset_otp_expires"):
+        return False, "No active reset request found. Please request a new code."
+
+    if datetime.fromisoformat(user["reset_otp_expires"]) < datetime.now(timezone.utc):
+        return False, "This code has expired. Please request a new one."
+
+    try:
+        if not bcrypt.checkpw(otp.encode(), user["reset_otp"].encode()):
+            return False, "Incorrect code."
+    except ValueError:
+        return False, "Incorrect code."
+
+    try:
+        supabase.table("users").update({
+            "password": hash_password(new_password),
+            "reset_otp": None,
+            "reset_otp_expires": None
+        }).eq("username", user["username"]).execute()
+    except Exception as e:
+        print(f"[Reset Update Error] {e}")
+        return False, "Something went wrong. Please try again."
+
+    return True, "Password updated! Please login with your new password."
+
 # --- INITIALIZE SESSION STATE ---
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "username" not in st.session_state: st.session_state.username = ""
@@ -152,7 +257,7 @@ if not st.session_state.logged_in:
         st.stop()
         
     st.markdown("---")
-    t_login, t_signup = st.tabs(["Login", "Sign Up (Free Trial)"])
+    t_login, t_signup, t_forgot = st.tabs(["Login", "Sign Up (Free Trial)", "Forgot Password"])
     
     with t_login:
         l_user = st.text_input("Username", key="l_user")
@@ -179,17 +284,65 @@ if not st.session_state.logged_in:
                 
     with t_signup:
         s_user = st.text_input("New Username", key="s_user")
+        s_email = st.text_input("Email", key="s_email", help="Needed for password reset")
         s_pass = st.text_input("New Password", type="password", key="s_pass")
         if st.button("Create Account & Get 5 Free Papers", use_container_width=True):
             if len(s_user.strip()) < 3:
                 st.error("Username must be at least 3 characters.")
-            elif len(s_pass) < 6:
-                st.error("Password must be at least 6 characters.")
             elif not re.match(r'^[A-Za-z0-9_.]+$', s_user.strip()):
                 st.error("Username can only contain letters, numbers, underscores, and dots.")
+            elif not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', s_email.strip()):
+                st.error("Please enter a valid email address.")
+            elif len(s_pass) < 6:
+                st.error("Password must be at least 6 characters.")
             else:
-                if create_user(s_user, s_pass): st.success("Account created successfully! Please Login.")
-                else: st.error("Username already exists. Choose another.")
+                ok, msg = create_user(s_user, s_pass, s_email)
+                if ok: st.success(msg)
+                else: st.error(msg)
+
+    with t_forgot:
+        if "reset_otp_sent" not in st.session_state: st.session_state.reset_otp_sent = False
+        if "reset_identifier" not in st.session_state: st.session_state.reset_identifier = ""
+        if "reset_request_locked_until" not in st.session_state: st.session_state.reset_request_locked_until = 0
+
+        if not st.session_state.reset_otp_sent:
+            st.write("Enter your username or email — we'll send a 6-digit code to your registered email.")
+            f_id = st.text_input("Username or Email", key="f_id")
+
+            req_locked_remaining = st.session_state.reset_request_locked_until - time.time()
+            if req_locked_remaining > 0:
+                st.info(f"Please wait {int(req_locked_remaining)}s before requesting another code.")
+            elif st.button("Send Reset Code", use_container_width=True):
+                if f_id.strip() == "":
+                    st.error("Please enter your username or email.")
+                else:
+                    ok, msg = request_password_reset(f_id)
+                    st.session_state.reset_request_locked_until = time.time() + 60
+                    if ok:
+                        st.session_state.reset_otp_sent = True
+                        st.session_state.reset_identifier = f_id
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+        else:
+            st.info("Code sent (if the account exists). Check your email — it expires in 10 minutes.")
+            f_otp = st.text_input("6-digit Code", key="f_otp", max_chars=6)
+            f_new_pass = st.text_input("New Password", type="password", key="f_new_pass")
+            fc1, fc2 = st.columns(2)
+            if fc1.button("Reset Password", use_container_width=True):
+                if len(f_new_pass) < 6:
+                    st.error("Password must be at least 6 characters.")
+                else:
+                    ok, msg = verify_and_reset_password(st.session_state.reset_identifier, f_otp, f_new_pass)
+                    if ok:
+                        st.success(msg)
+                        st.session_state.reset_otp_sent = False
+                    else:
+                        st.error(msg)
+            if fc2.button("Start Over", use_container_width=True):
+                st.session_state.reset_otp_sent = False
+                st.rerun()
     st.stop()
 
 # ==========================================
