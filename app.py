@@ -87,6 +87,8 @@ def create_user(username, password, email):
         return True, "Account created successfully! Please Login."
     except Exception as e:
         print(f"[Signup Error] {e}")  # log server-side, don't leak details to the user
+        if st.secrets.get("DEBUG_MODE", False):
+            return False, f"DEBUG: {e}"
         return False, "Something went wrong creating your account. Please try again."
 
 def authenticate_user(username, password):
