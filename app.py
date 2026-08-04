@@ -13,6 +13,7 @@ import threading
 import time
 import random
 import smtplib
+import razorpay
 from email.mime.text import MIMEText
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
@@ -45,6 +46,20 @@ def init_supabase():
         return None
 
 supabase: Client = init_supabase()
+
+# --- INITIALIZE RAZORPAY CLIENT ---
+@st.cache_resource
+def init_razorpay():
+    try:
+        return razorpay.Client(auth=(st.secrets["RAZORPAY_KEY_ID"], st.secrets["RAZORPAY_KEY_SECRET"]))
+    except Exception as e:
+        print(f"[Razorpay Init Error] {e}")
+        return None
+
+razorpay_client = init_razorpay()
+APP_URL = "https://paperbanao-web-mpv5z8yturtkx25dduvfck.streamlit.app/"
+PRO_PRICE_INR = 99
+PRO_DURATION_DAYS = 30
 
 # --- CONCURRENCY LOCK ---
 # google.generativeai's genai.configure() sets a PROCESS-WIDE global.
@@ -114,15 +129,29 @@ def authenticate_user(username, password):
 
 def get_user_data(username):
     try:
-        res = supabase.table("users").select("papers_generated, is_pro").eq("username", username).execute()
-        if len(res.data) > 0: return (res.data[0]["papers_generated"], res.data[0]["is_pro"])
+        res = supabase.table("users").select("papers_generated, is_pro, email, pro_expires_at").eq("username", username).execute()
+        if len(res.data) > 0:
+            row = res.data[0]
+            expires_at = row.get("pro_expires_at")
+            effective_pro = False
+            if expires_at:
+                try:
+                    effective_pro = datetime.fromisoformat(expires_at) > datetime.now(timezone.utc)
+                except ValueError:
+                    effective_pro = False
+            return {
+                "papers_generated": row["papers_generated"],
+                "is_pro": effective_pro,
+                "email": row.get("email"),
+                "pro_expires_at": expires_at
+            }
     except Exception as e:
         print(f"[get_user_data Error] {e}")
-    return (0, False)
+    return {"papers_generated": 0, "is_pro": False, "email": None, "pro_expires_at": None}
 
 def update_paper_count(username):
     try:
-        current_count, _ = get_user_data(username)
+        current_count = get_user_data(username)["papers_generated"]
         supabase.table("users").update({"papers_generated": current_count + 1}).eq("username", username).execute()
     except Exception as e:
         print(f"[update_paper_count Error] {e}")
@@ -235,6 +264,94 @@ def verify_and_reset_password(identifier, otp, new_password):
         return False, "Something went wrong. Please try again."
 
     return True, "Password updated! Please login with your new password."
+
+# --- RAZORPAY: PAYMENT LINK + VERIFICATION ---
+def create_pro_payment_link(username, email):
+    if not razorpay_client:
+        return None, "Payment system isn't configured right now."
+    try:
+        link_data = {
+            "amount": PRO_PRICE_INR * 100,  # paise
+            "currency": "INR",
+            "accept_partial": False,
+            "description": f"PaperBanao Pro - {PRO_DURATION_DAYS} Days",
+            "customer": {"name": username, "email": email} if email else {"name": username},
+            "notify": {"email": bool(email)},
+            "reminder_enable": True,
+            "notes": {"username": username},
+            "callback_url": APP_URL,
+            "callback_method": "get"
+        }
+        link = razorpay_client.payment_link.create(link_data)
+        return link["short_url"], None
+    except Exception as e:
+        print(f"[Payment Link Error] {e}")
+        return None, "Couldn't create the payment link. Please try again."
+
+def process_payment_callback(params):
+    """Verifies a Razorpay payment-link callback and, if valid and not
+    already processed, upgrades the user to Pro for PRO_DURATION_DAYS."""
+    required = ["razorpay_payment_link_id", "razorpay_payment_link_reference_id",
+                "razorpay_payment_link_status", "razorpay_payment_id", "razorpay_signature"]
+    if not all(k in params for k in required):
+        return False, None
+
+    try:
+        razorpay_client.utility.verify_payment_link_signature(params)
+    except razorpay.errors.SignatureVerificationError as e:
+        print(f"[Payment Signature Error] {e}")
+        return False, "Payment verification failed. If money was deducted, please contact support."
+
+    if params["razorpay_payment_link_status"] != "paid":
+        return False, None
+
+    payment_id = params["razorpay_payment_id"]
+
+    # Idempotency: if we've already recorded this payment_id, don't credit again
+    # (this can happen if the user refreshes the page after a successful payment)
+    try:
+        existing = supabase.table("payments").select("payment_id").eq("payment_id", payment_id).execute()
+        if existing.data:
+            return True, "Payment already processed."
+    except Exception as e:
+        print(f"[Payment Idempotency Check Error] {e}")
+        return False, "Something went wrong verifying your payment. Please contact support."
+
+    try:
+        link_details = razorpay_client.payment_link.fetch(params["razorpay_payment_link_id"])
+        username = link_details.get("notes", {}).get("username")
+    except Exception as e:
+        print(f"[Payment Link Fetch Error] {e}")
+        return False, "Couldn't confirm payment details. Please contact support."
+
+    if not username:
+        return False, "Couldn't identify the account for this payment. Please contact support."
+
+    try:
+        # Extend from current expiry if still active, else start from now
+        user_res = supabase.table("users").select("pro_expires_at").eq("username", username).execute()
+        now = datetime.now(timezone.utc)
+        current_expiry = None
+        if user_res.data and user_res.data[0].get("pro_expires_at"):
+            current_expiry = datetime.fromisoformat(user_res.data[0]["pro_expires_at"])
+        start_from = current_expiry if (current_expiry and current_expiry > now) else now
+        new_expiry = start_from + timedelta(days=PRO_DURATION_DAYS)
+
+        supabase.table("users").update({
+            "is_pro": True,
+            "pro_expires_at": new_expiry.isoformat()
+        }).eq("username", username).execute()
+
+        supabase.table("payments").insert({
+            "payment_id": payment_id,
+            "username": username,
+            "amount_inr": PRO_PRICE_INR
+        }).execute()
+    except Exception as e:
+        print(f"[Payment Credit Error] {e}")
+        return False, "Payment received but activation failed. Please contact support with your payment ID: " + payment_id
+
+    return True, f"Payment successful! Pro is active until {new_expiry.strftime('%d %b %Y')}."
 
 # --- INITIALIZE SESSION STATE ---
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
@@ -350,9 +467,22 @@ if not st.session_state.logged_in:
 # ==========================================
 # --- APP LOGIC (IF LOGGED IN) ---
 # ==========================================
+
+# Handle Razorpay payment-link callback (redirected back with query params)
+qp = st.query_params
+if "razorpay_payment_id" in qp:
+    ok, msg = process_payment_callback(dict(qp))
+    st.query_params.clear()
+    if ok:
+        st.success(msg)
+    elif msg:
+        st.error(msg)
+
 user_data = get_user_data(st.session_state.username)
-papers_used = user_data[0]
-is_pro = bool(user_data[1])
+papers_used = user_data["papers_generated"]
+is_pro = user_data["is_pro"]
+pro_expires_at = user_data["pro_expires_at"]
+user_email = user_data["email"]
 FREE_LIMIT = 5
 
 col_logo, col_title, col_logout = st.columns([1, 4, 1])
@@ -370,13 +500,29 @@ with col_logout:
 # --- SIDEBAR & SETTINGS ---
 # ==========================================
 st.sidebar.header("💳 Your Account")
-if is_pro: st.sidebar.success("🌟 PRO Member (Unlimited)")
+if is_pro:
+    expiry_str = datetime.fromisoformat(pro_expires_at).strftime("%d %b %Y")
+    st.sidebar.success(f"🌟 PRO Member (Unlimited)\n\nActive until {expiry_str}")
+    if st.sidebar.button("Renew Pro (₹99 / 30 days)", use_container_width=True):
+        with st.spinner("Creating payment link..."):
+            link, err = create_pro_payment_link(st.session_state.username, user_email)
+        if link:
+            st.sidebar.link_button("Click to Pay ₹99", link, use_container_width=True)
+        else:
+            st.sidebar.error(err)
 else:
     papers_left = FREE_LIMIT - papers_used
     st.sidebar.info(f"🪙 Free Credits: {papers_left} / {FREE_LIMIT}")
     st.sidebar.progress(papers_used / FREE_LIMIT if papers_used <= FREE_LIMIT else 1.0)
     if papers_left <= 0:
         st.sidebar.error("⚠️ Free Trial Expired!")
+    if st.sidebar.button("⬆️ Upgrade to Pro (₹99 / 30 days)", use_container_width=True):
+        with st.spinner("Creating payment link..."):
+            link, err = create_pro_payment_link(st.session_state.username, user_email)
+        if link:
+            st.sidebar.link_button("Click to Pay ₹99", link, use_container_width=True)
+        else:
+            st.sidebar.error(err)
 
 st.sidebar.markdown("---")
 # BYOK Feature
