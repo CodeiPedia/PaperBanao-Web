@@ -6,3 +6,5 @@ python-docx
 supabase
 bcrypt
 razorpay
+xhtml2pdf
+pillow
