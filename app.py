@@ -751,7 +751,7 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
                         <tr>
                             {logo_html_inline}
                             <td style='vertical-align: middle;'>
-                                <h1 style='margin: 0; font-size: 24px; font-family: "Times New Roman", serif; font-weight: 900; text-transform: uppercase; white-space: nowrap;'>{i_name}</h1>
+                                <h1 style='margin: 0; font-size: 24px; font-family: "Noto Sans", "Nirmala UI", "Times New Roman", serif; font-weight: 900; text-transform: uppercase; white-space: nowrap;'>{i_name}</h1>
                             </td>
                         </tr>
                     </table>
@@ -800,8 +800,8 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     col_style = "column-count: 2; column-gap: 15mm; column-rule: 1px solid #000; font-size: 14px;" if is_2_col else "font-size: 16px;"
 
     # 🌟 FIX: Added CSS to handle spacing between paragraphs (questions) better
-    return f"""<!DOCTYPE html><html><head><style>
-    body {{ background: #f0f0f0; font-family: 'Times New Roman', serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} 
+    return f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+    body {{ background: #f0f0f0; font-family: 'Noto Sans', 'Nirmala UI', 'Times New Roman', serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} 
     .a4-page {{ background: white; width: 210mm; min-height: 297mm; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.2); box-sizing: border-box; position: relative; overflow: hidden; }} 
     .watermark {{ position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 80px; color: rgba(0, 0, 0, 0.05); z-index: 0; pointer-events: none; white-space: nowrap; font-weight: bold; }}
     table {{ width: 100%; border-collapse: collapse; border: none; position: relative; z-index: 1; }}
@@ -863,7 +863,7 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
     
     rFonts = style.element.rPr.rFonts
     if rFonts is not None:
-        rFonts.set(qn('w:cs'), 'Mangal') 
+        rFonts.set(qn('w:cs'), 'Nirmala UI') 
         rFonts.set(qn('w:ascii'), 'Arial')
         rFonts.set(qn('w:hAnsi'), 'Arial')
     
@@ -872,7 +872,7 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
             h_style = doc.styles[f'Heading {i}']
             h_style.font.name = 'Arial'
             if h_style.element.rPr.rFonts is not None:
-                h_style.element.rPr.rFonts.set(qn('w:cs'), 'Mangal')
+                h_style.element.rPr.rFonts.set(qn('w:cs'), 'Nirmala UI')
                 h_style.element.rPr.rFonts.set(qn('w:ascii'), 'Arial')
                 h_style.element.rPr.rFonts.set(qn('w:hAnsi'), 'Arial')
             h_style.font.color.rgb = RGBColor(0, 0, 0)
@@ -976,6 +976,17 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
             for i, part in enumerate(parts):
                 run = p.add_run(part)
                 if i % 2 == 1: run.bold = True
+                # Explicitly set the complex-script font so Hindi/Devanagari
+                # text renders correctly, instead of relying on style
+                # inheritance (which some Word versions don't apply reliably).
+                rpr = run._r.get_or_add_rPr()
+                rfonts = rpr.find(qn('w:rFonts'))
+                if rfonts is None:
+                    rfonts = rpr.makeelement(qn('w:rFonts'), {})
+                    rpr.append(rfonts)
+                rfonts.set(qn('w:cs'), 'Nirmala UI')
+                rfonts.set(qn('w:ascii'), 'Arial')
+                rfonts.set(qn('w:hAnsi'), 'Arial')
                 
     if doc.sections:
         footer = doc.sections[0].footer
