@@ -712,9 +712,39 @@ def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, 
     if include_answers: return base_prompt + "\nAdd '# ANSWER KEY' at end, also separated by `|||`. Ensure numbering in answers exactly matches the continuous numbering of the questions."
     return base_prompt
 
-def regenerate_single_question(old_text, api_key, model_name):
-    prompt = f"Generate a NEW question to replace this. Keep the original language style. Use Unicode math symbols (θ, π, √, ²). ONLY output the question text:\n{old_text}"
-    return generate_gemini_content(prompt, api_key, model_name)
+def extract_question_number(text):
+    """Pulls the question number out of a block like '**Q3.** ...' or '3. ...'
+    so we can find the matching Answer Key entry for a regenerated question."""
+    m = re.search(r'Q\.?\s*(\d+)', text, re.IGNORECASE)
+    if m:
+        return m.group(1)
+    m2 = re.match(r'\s*\**\s*(\d+)\.', text)
+    if m2:
+        return m2.group(1)
+    return None
+
+def regenerate_single_question(old_text, api_key, model_name, subject, topics):
+    """Regenerates one question, staying on-topic, and also returns a fresh
+    answer/solution for it so the Answer Key can be kept in sync."""
+    topic_context = topics.strip() if topics and topics.strip() else subject
+    prompt = (
+        f"You are regenerating ONE question from a {subject} exam paper. "
+        f"The paper's topics are: {topic_context}. Stay strictly within this subject and these topics — "
+        f"do not drift into unrelated topics.\n\n"
+        f"The original question being replaced was:\n{old_text}\n\n"
+        "Write a NEW question of the same type, difficulty, and marks as the original, strictly on the same "
+        "subject/topics. Keep the same question number label if the original had one (e.g. 'Q3.'). "
+        "Use Unicode math symbols (θ, π, √, ²) instead of LaTeX.\n\n"
+        "Then on a new line write the exact delimiter @@@ANSWER@@@ followed by the correct answer/solution for "
+        "THIS NEW question — a brief correct option letter for MCQ/True-False/Fill-in-the-blank, or a full "
+        "step-by-step explanation for Short/Long answer questions.\n\n"
+        "Output ONLY the question text, then @@@ANSWER@@@, then the answer. No extra commentary."
+    )
+    resp_text = generate_gemini_content(prompt, api_key, model_name)
+    if "@@@ANSWER@@@" in resp_text:
+        q_part, a_part = resp_text.split("@@@ANSWER@@@", 1)
+        return q_part.strip(), a_part.strip()
+    return resp_text.strip(), None
 
 def clean_math_for_word(text):
     text = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'(\1)/(\2)', text)
@@ -1178,18 +1208,38 @@ with tab_create:
     if st.session_state.blocks:
         st.markdown("---")
         with st.expander("🛠️ Edit Questions", expanded=False):
+            st.caption("Regenerating a question also updates its matching Answer Key entry, if one exists.")
             for i, b in enumerate(st.session_state.blocks):
                 edit_col, regen_col = st.columns([5, 1])
                 new_text = edit_col.text_area(f"Question {i+1}", b['text'], height=100, key=f"block_text_{b['id']}")
                 if new_text != st.session_state.blocks[i]['text']:
                     st.session_state.blocks[i]['text'] = new_text
                     st.session_state.blocks_saved = False
-                if regen_col.button("🔄 Regenerate", key=f"regen_{b['id']}", help="Ask AI to write a fresh version of this question"):
+                if regen_col.button("🔄 Regenerate", key=f"regen_{b['id']}", help="Ask AI to write a fresh version of this question (and its answer key entry, if present)"):
                     with st.spinner("Regenerating..."):
                         try:
-                            new_q_text = regenerate_single_question(b['text'], active_api_key, working_model_name)
+                            old_number = extract_question_number(b['text'])
+                            new_q_text, new_answer_text = regenerate_single_question(b['text'], active_api_key, working_model_name, sub, syl)
                             st.session_state.blocks[i]['text'] = new_q_text
                             st.session_state.blocks[i]['id'] = str(uuid.uuid4())
+
+                            # Keep the Answer Key in sync: find the matching answer
+                            # entry (by question number) and update it too, so the
+                            # solution doesn't stay pointing at the old question.
+                            if new_answer_text and old_number:
+                                ans_key_idx = None
+                                for j, blk in enumerate(st.session_state.blocks):
+                                    if "ANSWER KEY" in blk['text'].upper():
+                                        ans_key_idx = j
+                                        break
+                                if ans_key_idx is not None:
+                                    for j in range(ans_key_idx + 1, len(st.session_state.blocks)):
+                                        blk_number = extract_question_number(st.session_state.blocks[j]['text'])
+                                        if blk_number == old_number:
+                                            st.session_state.blocks[j]['text'] = f"**Q{old_number}.** {new_answer_text}"
+                                            st.session_state.blocks[j]['id'] = str(uuid.uuid4())
+                                            break
+
                             st.session_state.blocks_saved = False
                             st.rerun()
                         except Exception as e:
