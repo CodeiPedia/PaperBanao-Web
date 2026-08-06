@@ -863,16 +863,21 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
     
     rFonts = style.element.rPr.rFonts
     if rFonts is not None:
-        rFonts.set(qn('w:cs'), 'Nirmala UI') 
+        rFonts.set(qn('w:cs'), 'Noto Sans Devanagari') 
         rFonts.set(qn('w:ascii'), 'Arial')
         rFonts.set(qn('w:hAnsi'), 'Arial')
+    style_lang = style.element.rPr.find(qn('w:lang'))
+    if style_lang is None:
+        style_lang = style.element.rPr.makeelement(qn('w:lang'), {})
+        style.element.rPr.append(style_lang)
+    style_lang.set(qn('w:bidi'), 'hi-IN')
     
     for i in range(3):
         try:
             h_style = doc.styles[f'Heading {i}']
             h_style.font.name = 'Arial'
             if h_style.element.rPr.rFonts is not None:
-                h_style.element.rPr.rFonts.set(qn('w:cs'), 'Nirmala UI')
+                h_style.element.rPr.rFonts.set(qn('w:cs'), 'Noto Sans Devanagari')
                 h_style.element.rPr.rFonts.set(qn('w:ascii'), 'Arial')
                 h_style.element.rPr.rFonts.set(qn('w:hAnsi'), 'Arial')
             h_style.font.color.rgb = RGBColor(0, 0, 0)
@@ -891,6 +896,26 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         for section in doc.sections:
             section.top_margin = section.bottom_margin = section.left_margin = section.right_margin = Inches(0.4)
 
+    def apply_cs_font(run):
+        rpr = run._r.get_or_add_rPr()
+        rfonts = rpr.find(qn('w:rFonts'))
+        if rfonts is None:
+            rfonts = rpr.makeelement(qn('w:rFonts'), {})
+            rpr.append(rfonts)
+        rfonts.set(qn('w:cs'), 'Noto Sans Devanagari')
+        rfonts.set(qn('w:ascii'), 'Arial')
+        rfonts.set(qn('w:hAnsi'), 'Arial')
+        # Critical: without an explicit language tag, Word doesn't reliably
+        # classify Devanagari text as "complex script" and may render it
+        # with the ascii font (Arial, no Devanagari glyphs = tofu boxes) on
+        # ANY platform, regardless of which cs font we specify above. This
+        # tag is what actually makes Word route the text correctly.
+        lang = rpr.find(qn('w:lang'))
+        if lang is None:
+            lang = rpr.makeelement(qn('w:lang'), {})
+            rpr.append(lang)
+        lang.set(qn('w:bidi'), 'hi-IN')
+
     def insert_chate_header():
         title_table = doc.add_table(rows=1, cols=1)
         p1 = title_table.cell(0,0).paragraphs[0]
@@ -907,6 +932,7 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         r1 = p1.add_run(i_name.upper())
         r1.bold = True
         r1.font.size = Pt(18)
+        apply_cs_font(r1)
         
         details_table = doc.add_table(rows=1, cols=3)
         details_table.autofit = False
@@ -919,23 +945,27 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         r3 = p3.add_run(f"Class : {grade}\nTime : {exam_time}")
         r3.bold = True
         r3.font.size = Pt(10)
+        apply_cs_font(r3)
 
         p4 = details_table.cell(0,1).paragraphs[0]
         p4.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r4 = p4.add_run("\n[ EXAMINATION ]")
         r4.bold = True
         r4.font.size = Pt(12)
+        apply_cs_font(r4)
 
         p2 = details_table.cell(0,2).paragraphs[0]
         p2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         r2 = p2.add_run(f"Sub.: {sub}\nMarks: {total_m}")
         r2.bold = True
         r2.font.size = Pt(10)
+        apply_cs_font(r2)
         
         doc.add_paragraph("__________________________________________________________________________").alignment = WD_ALIGN_PARAGRAPH.CENTER
         pt = doc.add_paragraph("MULTIPLE CHOICE QUESTIONS & THEORY")
         pt.alignment = WD_ALIGN_PARAGRAPH.CENTER
         pt.runs[0].bold = True
+        apply_cs_font(pt.runs[0])
         
         main_heading_text = topics.strip().upper() if topics.strip() != "" else sub.upper()
         ptopics = doc.add_paragraph(main_heading_text)
@@ -943,6 +973,7 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         ptopics.runs[0].underline = True
         ptopics.runs[0].font.size = Pt(14)
         ptopics.runs[0].bold = True
+        apply_cs_font(ptopics.runs[0])
         doc.add_paragraph() 
 
     insert_chate_header()
@@ -976,17 +1007,7 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
             for i, part in enumerate(parts):
                 run = p.add_run(part)
                 if i % 2 == 1: run.bold = True
-                # Explicitly set the complex-script font so Hindi/Devanagari
-                # text renders correctly, instead of relying on style
-                # inheritance (which some Word versions don't apply reliably).
-                rpr = run._r.get_or_add_rPr()
-                rfonts = rpr.find(qn('w:rFonts'))
-                if rfonts is None:
-                    rfonts = rpr.makeelement(qn('w:rFonts'), {})
-                    rpr.append(rfonts)
-                rfonts.set(qn('w:cs'), 'Nirmala UI')
-                rfonts.set(qn('w:ascii'), 'Arial')
-                rfonts.set(qn('w:hAnsi'), 'Arial')
+                apply_cs_font(run)
                 
     if doc.sections:
         footer = doc.sections[0].footer
@@ -1003,11 +1024,13 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
             
         run_name = footer_para.add_run(f"{i_name}  |  ")
         run_name.font.size = Pt(10)
+        apply_cs_font(run_name)
         run_name.font.bold = True
         run_name.font.color.rgb = RGBColor(100, 100, 100)
         
         run_rest = footer_para.add_run(f"📍 {i_address}  |  📞 {i_contact}  |  👨‍🏫 {t_name}")
         run_rest.font.size = Pt(10)
+        apply_cs_font(run_rest)
         run_rest.font.color.rgb = RGBColor(100, 100, 100)
             
     bio = BytesIO()
