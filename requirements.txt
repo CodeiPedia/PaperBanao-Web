@@ -1,10 +1,10 @@
 streamlit
-google-generativeai
-PyPDF2
-Markdown
+requests
+PyMuPDF
+markdown
 python-docx
 supabase
 bcrypt
 razorpay
 xhtml2pdf
-pillow
+Pillow
