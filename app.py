@@ -191,6 +191,43 @@ def save_institution_defaults(username, inst_name, inst_address, inst_contact, t
         logging.error(f"[save_institution_defaults Error] {e}")
         return False
 
+# --- CURRICULUM (Class -> Subject -> Chapters), shared across all users ---
+# This is deliberately teacher-maintained rather than hardcoded: NCERT/BSEB
+# syllabi change over time, so a hardcoded list would silently go stale.
+# Anyone can add/extend a class+subject's chapter list; it's saved once and
+# reused by everyone after that.
+CLASS_OPTIONS = [f"Class {i}" for i in range(1, 13)]
+
+def get_subjects_for_class(class_name):
+    try:
+        res = supabase.table("curriculum").select("subject_name").eq("class_name", class_name).execute()
+        return sorted(set(r["subject_name"] for r in res.data))
+    except Exception as e:
+        logging.error(f"[get_subjects_for_class Error] {e}")
+        return []
+
+def get_chapters(class_name, subject_name):
+    try:
+        res = supabase.table("curriculum").select("chapters").eq("class_name", class_name).eq("subject_name", subject_name).execute()
+        if res.data:
+            return [c.strip() for c in res.data[0]["chapters"].split(",") if c.strip()]
+    except Exception as e:
+        logging.error(f"[get_chapters Error] {e}")
+    return []
+
+def save_chapters(class_name, subject_name, chapters_list):
+    try:
+        chapters_str = ", ".join(sorted(set(c.strip() for c in chapters_list if c.strip())))
+        existing = supabase.table("curriculum").select("id").eq("class_name", class_name).eq("subject_name", subject_name).execute()
+        if existing.data:
+            supabase.table("curriculum").update({"chapters": chapters_str, "updated_at": datetime.now(timezone.utc).isoformat()}).eq("id", existing.data[0]["id"]).execute()
+        else:
+            supabase.table("curriculum").insert({"class_name": class_name, "subject_name": subject_name, "chapters": chapters_str}).execute()
+        return True
+    except Exception as e:
+        logging.error(f"[save_chapters Error] {e}")
+        return False
+
 # --- PASSWORD RESET (Email OTP) ---
 def send_otp_email(to_email, otp):
     try:
@@ -1093,7 +1130,46 @@ with tab_create:
         c1, c2 = st.columns(2)
         sub = c1.text_input("Subject")
         grade = c2.text_input("Class")
-        syl = st.text_area("Topics")
+
+        use_curriculum = st.toggle("📚 Pick chapters from a saved Class/Subject list (BSEB/NCERT)", value=False,
+                                     help="Select from chapters you've saved before, or add a new list for this class/subject.")
+        chapter_topics = ""
+        if use_curriculum:
+            cc1, cc2 = st.columns(2)
+            sel_class = cc1.selectbox("Class", CLASS_OPTIONS, key="curr_class")
+            existing_subjects = get_subjects_for_class(sel_class)
+            sel_subjects = cc2.multiselect("Subject(s)", existing_subjects, key="curr_subjects")
+
+            new_subject = st.text_input("Add a new subject for this class (optional)", key="curr_new_subject", placeholder="e.g. Mathematics")
+            if new_subject.strip() and new_subject.strip() not in sel_subjects:
+                sel_subjects = sel_subjects + [new_subject.strip()]
+
+            all_selected_chapters = []
+            for subj in sel_subjects:
+                with st.expander(f"📖 {subj} — chapters", expanded=True):
+                    existing_chapters = get_chapters(sel_class, subj)
+                    chosen_chapters = st.multiselect(f"Select chapters ({subj})", existing_chapters, key=f"chap_sel_{sel_class}_{subj}")
+                    add_chapters_text = st.text_area(
+                        f"Add new chapters for {subj} (comma-separated)", key=f"chap_add_{sel_class}_{subj}",
+                        placeholder="e.g. Real Numbers, Polynomials, Triangles",
+                        help="These get saved for everyone using PaperBanao, so next time you (or others) just select them."
+                    )
+                    if st.button(f"💾 Save chapters for {subj}", key=f"chap_save_{sel_class}_{subj}"):
+                        new_list = existing_chapters + [c.strip() for c in add_chapters_text.split(",") if c.strip()]
+                        if save_chapters(sel_class, subj, new_list):
+                            st.success(f"Saved! Chapters for {sel_class} - {subj} updated.")
+                            st.rerun()
+                        else:
+                            st.error("Couldn't save chapters. Please try again.")
+                    all_selected_chapters.extend([f"{subj}: {c}" for c in chosen_chapters])
+                    all_selected_chapters.extend([f"{subj}: {c.strip()}" for c in add_chapters_text.split(",") if c.strip()])
+
+            chapter_topics = "; ".join(all_selected_chapters)
+            if chapter_topics:
+                st.caption(f"✅ Using: {chapter_topics}")
+
+        extra_topics = st.text_area("Additional/Specific Topics (optional)")
+        syl = ", ".join(filter(None, [chapter_topics, extra_topics.strip()]))
     else:
         c1, c2 = st.columns(2)
         sub = c1.text_input("Subject (PDF)")
