@@ -1,19 +1,18 @@
 import streamlit as st
-import google.generativeai as genai
-import PyPDF2
+import requests
+import fitz  # PyMuPDF
 import os
 import markdown
 from datetime import datetime, timedelta, timezone
 import re
 import uuid
-import hashlib
 import base64
 import bcrypt
-import threading
 import time
 import random
 import smtplib
 import razorpay
+import logging
 from xhtml2pdf import pisa
 from PIL import Image
 from email.mime.text import MIMEText
@@ -22,9 +21,10 @@ from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from io import BytesIO
-
-# --- SUPABASE ---
 from supabase import create_client, Client
+
+# --- LOGGING CONFIGURATION ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- Page Config ---
 st.set_page_config(page_title="PaperBanao - AI Question Paper", page_icon="📝", layout="centered")
@@ -44,15 +44,13 @@ def init_supabase():
     try:
         return create_client(SUPABASE_URL, SUPABASE_KEY)
     except Exception as e:
-        st.error(f"Database Connection Error: {e}")
+        logging.error(f"[Database Connection Error] {e}")
+        st.error("Database Connection Error. Please contact support.")
         return None
 
 supabase: Client = init_supabase()
 
 class StoredLogo(BytesIO):
-    """Wraps logo bytes fetched from the DB so it behaves like a Streamlit
-    UploadedFile (.seek(), .getvalue(), .type) — lets create_a4_html /
-    create_word_docx use a saved default logo without any changes."""
     def __init__(self, data: bytes, mimetype: str):
         super().__init__(data)
         self.type = mimetype
@@ -63,37 +61,25 @@ def init_razorpay():
     try:
         return razorpay.Client(auth=(st.secrets["RAZORPAY_KEY_ID"], st.secrets["RAZORPAY_KEY_SECRET"]))
     except Exception as e:
-        print(f"[Razorpay Init Error] {e}")
+        logging.error(f"[Razorpay Init Error] {e}")
         return None
 
 razorpay_client = init_razorpay()
-APP_URL = "https://paperbanao-web-mpv5z8yturtkx25dduvfck.streamlit.app/"
+APP_URL = "https://paperbanao-web.streamlit.app/"
 PRO_PRICE_INR = 99
 PRO_DURATION_DAYS = 30
 
-# --- CONCURRENCY LOCK ---
-# google.generativeai's genai.configure() sets a PROCESS-WIDE global.
-# Streamlit runs concurrent users in separate threads of the SAME process,
-# so without this lock, two users generating a paper at the same moment
-# could end up using each other's API keys. This lock forces the
-# configure -> generate sequence to run atomically, one request at a time.
-GEMINI_LOCK = threading.Lock()
-
 # --- DB HELPER FUNCTIONS ---
 def hash_password(password):
-    """bcrypt with a per-password salt (replaces old unsalted SHA-256)."""
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 def verify_password(password, stored_hash):
-    """Verifies against bcrypt hashes, with a fallback for legacy SHA-256
-    hashes created before this update. Legacy accounts are transparently
-    upgraded to bcrypt on their next successful login."""
     if stored_hash.startswith("$2b$") or stored_hash.startswith("$2a$"):
         try:
             return bcrypt.checkpw(password.encode(), stored_hash.encode())
         except ValueError:
             return False
-    # Legacy SHA-256 hash (64 hex chars, no bcrypt prefix)
+    import hashlib
     legacy_hash = hashlib.sha256(password.encode()).hexdigest()
     return legacy_hash == stored_hash
 
@@ -111,7 +97,7 @@ def create_user(username, password, email):
         supabase.table("users").insert(data).execute()
         return True, "Account created successfully! Please Login."
     except Exception as e:
-        print(f"[Signup Error] {e}")  # log server-side, don't leak details to the user
+        logging.error(f"[Signup Error] {e}")
         if st.secrets.get("DEBUG_MODE", False):
             return False, f"DEBUG: {e}"
         return False, "Something went wrong creating your account. Please try again."
@@ -121,7 +107,7 @@ def authenticate_user(username, password):
     try:
         res = supabase.table("users").select("*").eq("username", username).execute()
     except Exception as e:
-        print(f"[Auth Error] {e}")
+        logging.error(f"[Auth Error] {e}")
         st.error("Login is temporarily unavailable. Please try again shortly.")
         return None
     if not res.data:
@@ -129,12 +115,11 @@ def authenticate_user(username, password):
     user = res.data[0]
     if not verify_password(password, user["password"]):
         return None
-    # Transparently upgrade legacy SHA-256 accounts to bcrypt
     if not (user["password"].startswith("$2b$") or user["password"].startswith("$2a$")):
         try:
             supabase.table("users").update({"password": hash_password(password)}).eq("username", username).execute()
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error(f"[Password Upgrade Error] {e}")
     return user
 
 def get_user_data(username):
@@ -156,7 +141,7 @@ def get_user_data(username):
                 "pro_expires_at": expires_at
             }
     except Exception as e:
-        print(f"[get_user_data Error] {e}")
+        logging.error(f"[get_user_data Error] {e}")
     return {"papers_generated": 0, "is_pro": False, "email": None, "pro_expires_at": None}
 
 def update_paper_count(username):
@@ -164,18 +149,15 @@ def update_paper_count(username):
         current_count = get_user_data(username)["papers_generated"]
         supabase.table("users").update({"papers_generated": current_count + 1}).eq("username", username).execute()
     except Exception as e:
-        print(f"[update_paper_count Error] {e}")
+        logging.error(f"[update_paper_count Error] {e}")
 
 def delete_paper(paper_id, username):
-    # Scope the delete to the logged-in user so one account can never
-    # delete another account's saved paper by guessing/tampering with an id.
     try:
         supabase.table("papers").delete().eq("id", paper_id).eq("username", username).execute()
     except Exception as e:
-        print(f"[delete_paper Error] {e}")
+        logging.error(f"[delete_paper Error] {e}")
         st.error("Couldn't delete that paper. Please try again.")
 
-# --- INSTITUTION DEFAULTS (saved letterhead/footer/language settings) ---
 def get_institution_defaults(username):
     try:
         res = supabase.table("users").select(
@@ -186,7 +168,7 @@ def get_institution_defaults(username):
         if res.data:
             return res.data[0]
     except Exception as e:
-        print(f"[get_institution_defaults Error] {e}")
+        logging.error(f"[get_institution_defaults Error] {e}")
     return {}
 
 def save_institution_defaults(username, inst_name, inst_address, inst_contact, teacher_name,
@@ -200,14 +182,13 @@ def save_institution_defaults(username, inst_name, inst_address, inst_contact, t
             "default_paper_language": paper_language,
             "default_board_format": board_format,
         }
-        # Only overwrite the saved logo if a new one was uploaded this session
         if logo_bytes is not None:
             update_data["default_logo_base64"] = base64.b64encode(logo_bytes).decode()
             update_data["default_logo_mimetype"] = logo_mimetype
         supabase.table("users").update(update_data).eq("username", username).execute()
         return True
     except Exception as e:
-        print(f"[save_institution_defaults Error] {e}")
+        logging.error(f"[save_institution_defaults Error] {e}")
         return False
 
 # --- PASSWORD RESET (Email OTP) ---
@@ -231,32 +212,28 @@ def send_otp_email(to_email, otp):
             server.sendmail(smtp_user, [to_email], msg.as_string())
         return True
     except Exception as e:
-        print(f"[Email Send Error] {e}")
+        logging.error(f"[Email Send Error] {e}")
         return False
 
 def request_password_reset(identifier):
-    """identifier can be a username or an email. Returns (ok, message).
-    Deliberately doesn't reveal whether the account exists, to avoid
-    leaking which usernames/emails are registered."""
     identifier = identifier.strip()
     generic_msg = "If that account exists, a reset code has been sent to its registered email."
     try:
         res = supabase.table("users").select("username, email") \
             .or_(f"username.eq.{identifier},email.eq.{identifier.lower()}").execute()
     except Exception as e:
-        print(f"[Reset Lookup Error] {e}")
+        logging.error(f"[Reset Lookup Error] {e}")
         return False, "Something went wrong. Please try again."
 
     if not res.data:
-        return True, generic_msg  # don't reveal non-existence
+        return True, generic_msg 
 
     user = res.data[0]
     if not user.get("email"):
-        # Legacy account created before email was required
         return False, "This account has no email on file. Please contact support to reset it."
 
     otp = f"{random.randint(0, 999999):06d}"
-    otp_hash = hash_password(otp)  # reuse the same bcrypt hashing as passwords
+    otp_hash = hash_password(otp)  
     expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
 
     try:
@@ -265,7 +242,7 @@ def request_password_reset(identifier):
             "reset_otp_expires": expires_at
         }).eq("username", user["username"]).execute()
     except Exception as e:
-        print(f"[Reset Store Error] {e}")
+        logging.error(f"[Reset Store Error] {e}")
         return False, "Something went wrong. Please try again."
 
     if send_otp_email(user["email"], otp):
@@ -279,7 +256,7 @@ def verify_and_reset_password(identifier, otp, new_password):
         res = supabase.table("users").select("username, reset_otp, reset_otp_expires") \
             .or_(f"username.eq.{identifier},email.eq.{identifier.lower()}").execute()
     except Exception as e:
-        print(f"[Reset Verify Error] {e}")
+        logging.error(f"[Reset Verify Error] {e}")
         return False, "Something went wrong. Please try again."
 
     if not res.data:
@@ -305,7 +282,7 @@ def verify_and_reset_password(identifier, otp, new_password):
             "reset_otp_expires": None
         }).eq("username", user["username"]).execute()
     except Exception as e:
-        print(f"[Reset Update Error] {e}")
+        logging.error(f"[Reset Update Error] {e}")
         return False, "Something went wrong. Please try again."
 
     return True, "Password updated! Please login with your new password."
@@ -316,7 +293,7 @@ def create_pro_payment_link(username, email):
         return None, "Payment system isn't configured right now."
     try:
         link_data = {
-            "amount": PRO_PRICE_INR * 100,  # paise
+            "amount": PRO_PRICE_INR * 100, 
             "currency": "INR",
             "accept_partial": False,
             "description": f"PaperBanao Pro - {PRO_DURATION_DAYS} Days",
@@ -330,12 +307,10 @@ def create_pro_payment_link(username, email):
         link = razorpay_client.payment_link.create(link_data)
         return link["short_url"], None
     except Exception as e:
-        print(f"[Payment Link Error] {e}")
+        logging.error(f"[Payment Link Error] {e}")
         return None, "Couldn't create the payment link. Please try again."
 
 def process_payment_callback(params):
-    """Verifies a Razorpay payment-link callback and, if valid and not
-    already processed, upgrades the user to Pro for PRO_DURATION_DAYS."""
     required = ["razorpay_payment_link_id", "razorpay_payment_link_reference_id",
                 "razorpay_payment_link_status", "razorpay_payment_id", "razorpay_signature"]
     if not all(k in params for k in required):
@@ -344,7 +319,7 @@ def process_payment_callback(params):
     try:
         razorpay_client.utility.verify_payment_link_signature(params)
     except razorpay.errors.SignatureVerificationError as e:
-        print(f"[Payment Signature Error] {e}")
+        logging.error(f"[Payment Signature Error] {e}")
         return False, "Payment verification failed. If money was deducted, please contact support."
 
     if params["razorpay_payment_link_status"] != "paid":
@@ -352,28 +327,25 @@ def process_payment_callback(params):
 
     payment_id = params["razorpay_payment_id"]
 
-    # Idempotency: if we've already recorded this payment_id, don't credit again
-    # (this can happen if the user refreshes the page after a successful payment)
     try:
         existing = supabase.table("payments").select("payment_id").eq("payment_id", payment_id).execute()
         if existing.data:
             return True, "Payment already processed."
     except Exception as e:
-        print(f"[Payment Idempotency Check Error] {e}")
+        logging.error(f"[Payment Idempotency Check Error] {e}")
         return False, "Something went wrong verifying your payment. Please contact support."
 
     try:
         link_details = razorpay_client.payment_link.fetch(params["razorpay_payment_link_id"])
         username = link_details.get("notes", {}).get("username")
     except Exception as e:
-        print(f"[Payment Link Fetch Error] {e}")
+        logging.error(f"[Payment Link Fetch Error] {e}")
         return False, "Couldn't confirm payment details. Please contact support."
 
     if not username:
         return False, "Couldn't identify the account for this payment. Please contact support."
 
     try:
-        # Extend from current expiry if still active, else start from now
         user_res = supabase.table("users").select("pro_expires_at").eq("username", username).execute()
         now = datetime.now(timezone.utc)
         current_expiry = None
@@ -393,7 +365,7 @@ def process_payment_callback(params):
             "amount_inr": PRO_PRICE_INR
         }).execute()
     except Exception as e:
-        print(f"[Payment Credit Error] {e}")
+        logging.error(f"[Payment Credit Error] {e}")
         return False, "Payment received but activation failed. Please contact support with your payment ID: " + payment_id
 
     return True, f"Payment successful! Pro is active until {new_expiry.strftime('%d %b %Y')}."
@@ -513,7 +485,6 @@ if not st.session_state.logged_in:
 # --- APP LOGIC (IF LOGGED IN) ---
 # ==========================================
 
-# Handle Razorpay payment-link callback (redirected back with query params)
 qp = st.query_params
 if "razorpay_payment_id" in qp:
     ok, msg = process_payment_callback(dict(qp))
@@ -573,7 +544,6 @@ else:
             st.sidebar.error(err)
 
 st.sidebar.markdown("---")
-# BYOK Feature
 st.sidebar.header("⚙️ Advanced Settings")
 st.sidebar.write("Use your own free Gemini API Key when the server limit is reached.")
 user_api_key = st.sidebar.text_input("Your Gemini API Key (Optional)", type="password", help="Get your free key from Google AI Studio")
@@ -584,7 +554,6 @@ if user_api_key:
 st.sidebar.markdown("---")
 st.sidebar.header("🏫 Institute Details")
 
-# Load saved defaults once per session (avoid refetching on every rerun)
 if "inst_defaults" not in st.session_state:
     st.session_state.inst_defaults = get_institution_defaults(st.session_state.username)
 _d = st.session_state.inst_defaults
@@ -623,8 +592,6 @@ if st.sidebar.button("💾 Save these as my Default", use_container_width=True):
     else:
         st.sidebar.error("Couldn't save your defaults. Please try again.")
 
-# Resolve which logo to actually use this run: a fresh upload wins,
-# otherwise fall back to the saved default logo (if any).
 if inst_logo_upload is not None:
     inst_logo = inst_logo_upload
 elif _d.get("default_logo_base64"):
@@ -636,44 +603,80 @@ else:
     inst_logo = None
 
 # ==========================================
-# --- API CONFIGURATION LOGIC ---
+# --- HTTP REQUESTS: GEMINI API CALLS ---
 # ==========================================
 active_api_key = user_api_key if user_api_key.strip() != "" else SERVER_API_KEY
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_working_model_name(api_key):
-    """Cached for 1 hour per API key so we don't hit list_models() on every
-    single UI interaction (button click, text input, etc all trigger a
-    full Streamlit rerun)."""
-    with GEMINI_LOCK:
-        genai.configure(api_key=api_key)
-        valid_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    flash_models = [m for m in valid_models if '1.5-flash' in m]
-    return flash_models[0] if flash_models else valid_models[0]
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+    try:
+        res = requests.get(url)
+        if res.status_code == 200:
+            models = [m['name'] for m in res.json().get('models', []) if 'generateContent' in m.get('supportedGenerationMethods', [])]
+            flash_models = [m for m in models if '1.5-flash' in m]
+            return flash_models[0].replace('models/', '') if flash_models else models[0].replace('models/', '')
+        return "gemini-1.5-flash"
+    except Exception as e:
+        logging.error(f"[Model Fetch Error] {e}")
+        return "gemini-1.5-flash"
 
-try:
-    working_model_name = get_working_model_name(active_api_key)
-except Exception:
-    working_model_name = "gemini-1.5-flash"
-    if user_api_key:
-        st.sidebar.error("❌ Invalid API Key. Please check your entry.")
+working_model_name = get_working_model_name(active_api_key)
+
+def generate_gemini_content(prompt, api_key, model_name="gemini-1.5-flash", images=None):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+    headers = {'Content-Type': 'application/json'}
+    
+    parts = [{"text": prompt}]
+    
+    if images:
+        for img in images:
+            buffered = BytesIO()
+            img.save(buffered, format="JPEG")
+            img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+            parts.append({
+                "inline_data": {
+                    "mime_type": "image/jpeg",
+                    "data": img_str
+                }
+            })
+            
+    payload = {"contents": [{"parts": parts}]}
+    
+    response = requests.post(url, headers=headers, json=payload)
+    if response.status_code == 200:
+        data = response.json()
+        try:
+            return data['candidates'][0]['content']['parts'][0]['text']
+        except (KeyError, IndexError):
+            logging.error("Unexpected response format from Gemini API.")
+            raise Exception("Unexpected response format from Gemini API.")
+    else:
+        error_msg = response.json().get('error', {}).get('message', 'Unknown error')
+        logging.error(f"Gemini API Error {response.status_code}: {error_msg}")
+        raise Exception(f"API Error {response.status_code}: {error_msg}")
 
 # --- Helper Functions ---
 def extract_text_from_pdf(uploaded_file, start_page, end_page):
     try:
-        reader = PyPDF2.PdfReader(uploaded_file)
+        doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
         start_index = max(0, start_page - 1) 
-        end_index = min(len(reader.pages), end_page)
-        return "".join([reader.pages[i].extract_text() + "\n" for i in range(start_index, end_index)])
-    except Exception: return ""
+        end_index = min(len(doc), end_page)
+        text = ""
+        for i in range(start_index, end_index):
+            text += doc[i].get_text("text") + "\n"
+        return text
+    except Exception as e:
+        logging.error(f"[PDF Extraction Error] {e}")
+        return ""
 
 def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answers, selected_language, subject):
     reqs = []
-    if mcq_c > 0: reqs.append(f"- {mcq_c} MCQs (Diff: {mcq_d}). [{mcq_m} Mark each]")
-    if fib_c > 0: reqs.append(f"- {fib_c} FIBs (Diff: {fib_d}). [{fib_m} Marks each]")
-    if tf_c > 0:  reqs.append(f"- {tf_c} True/False (Diff: {tf_d}). [{tf_m} Marks each]")
-    if short_c > 0: reqs.append(f"- {short_c} Short Q (Diff: {short_d}). [{short_m} Marks each]")
-    if long_c > 0:  reqs.append(f"- {long_c} Long Q (Diff: {long_d}). [{long_m} Marks each]")
+    if mcq_c > 0: reqs.append(f"## Multiple Choice Questions [{mcq_m} Mark(s) Each]\n- {mcq_c} MCQs (Difficulty: {mcq_d}).")
+    if fib_c > 0: reqs.append(f"## Fill in the Blanks [{fib_m} Mark(s) Each]\n- {fib_c} FIBs (Difficulty: {fib_d}). MUST include 4 options (A, B, C, D) on a new line for each blank.")
+    if tf_c > 0:  reqs.append(f"## True / False [{tf_m} Mark(s) Each]\n- {tf_c} True/False questions (Difficulty: {tf_d}). MUST include exactly 2 options: (A) True  (B) False on a new line.")
+    if short_c > 0: reqs.append(f"## Short Answer Questions [{short_m} Mark(s) Each]\n- {short_c} Short Qs (Difficulty: {short_d}).")
+    if long_c > 0:  reqs.append(f"## Long Answer Questions [{long_m} Mark(s) Each]\n- {long_c} Long Qs (Difficulty: {long_d}).")
     
     if selected_language == "English":
         lang_instruction = "LANGUAGE RULE: Generate the ENTIRE paper and answers strictly in the English language."
@@ -682,29 +685,26 @@ def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, 
     else:
         lang_instruction = "LANGUAGE RULE: Generate the paper in Hinglish (a mix of simple Hindi and English). Provide English terms in brackets for technical words."
     
-    # 🌟 FIX: Stricter prompting for Q-numbering and options layout
-    base_prompt = "\n".join(reqs) + f"\n\n{lang_instruction}\n\n" + f"""CRITICAL FORMATTING:
-1. STRICTLY adhere to the subject: **{subject}**. Do NOT generate general knowledge questions or questions from other subjects.
-2. START DIRECTLY WITH QUESTIONS. DO NOT GENERATE ANY INSTITUTE NAME, TIME, MARKS OR HEADER AT THE TOP.
-3. Separate every Question and Answer Key with delimiter: `|||` on a new line.
-4. MATH: USE UNICODE SYMBOLS ONLY (θ, π, √, ²). NO LaTeX. Write fractions as a/b.
-5. NUMBERING: Always start a question with **Q** followed by the number, e.g., **Q1.**, **Q2.**, etc. DO NOT use markdown lists like `1. ` or `* `.
-6. MCQs/FIBs OPTIONS: ALWAYS place the options on a NEW LINE below the question. Do NOT put them on the same line as the question.
-   Example:
+    base_prompt = "\n\n".join(reqs) + f"\n\n{lang_instruction}\n\n" + f"""CRITICAL FORMATTING:
+1. STRICTLY adhere to the subject: **{subject}**. Do NOT generate general knowledge questions.
+2. CONTINUOUS NUMBERING: Number ALL questions continuously from start to finish (e.g., **Q1.**, **Q2.**, **Q3.**, etc.) across ALL sections. Do NOT restart numbering at 1 for a new section. 
+3. OPTIONS ON NEW LINE: For MCQs, FIBs, and T/F, ALWAYS place the options on a NEW LINE directly below the question text. Do NOT place options on the same line as the question.
+   Correct Example:
    **Q1.** What is the value of x?
    (A) 1   (B) 2   (C) 3   (D) 4
-7. DO NOT use special checkboxes like ☐, ☑, •, ◦. Use [ ] or (A).
+4. MARKS IN HEADERS: Include the marks per question in the section headers as provided above.
+5. DETAILED ANSWERS: In the Answer Key, provide detailed, step-by-step explanations for Short and Long answer questions, proportional to their marks (e.g., 5-mark questions need a long, detailed explanation). Ensure answer numbers match the continuous question numbers.
+6. DELIMITER: Separate EVERY single Question, Section Header, and the Answer Key with the delimiter `|||` on a new line. Do not group multiple questions together.
+7. MATH: USE UNICODE SYMBOLS ONLY (θ, π, √, ²). NO LaTeX. Write fractions as a/b.
+8. DO NOT generate any Title, Institute Name, Time, or Marks at the very top. Start directly with the first section header.
     """
     
-    if include_answers: return base_prompt + "\nAdd '# Answer Key' at end, also separated by `|||`. Use the requested language in answers too."
+    if include_answers: return base_prompt + "\nAdd '# ANSWER KEY' at end, also separated by `|||`. Ensure numbering in answers exactly matches the continuous numbering of the questions."
     return base_prompt
 
 def regenerate_single_question(old_text, api_key, model_name):
     prompt = f"Generate a NEW question to replace this. Keep the original language style. Use Unicode math symbols (θ, π, √, ²). ONLY output the question text:\n{old_text}"
-    with GEMINI_LOCK:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_name)
-        return model.generate_content(prompt).text.strip()
+    return generate_gemini_content(prompt, api_key, model_name)
 
 def clean_math_for_word(text):
     text = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'(\1)/(\2)', text)
@@ -714,7 +714,6 @@ def clean_math_for_word(text):
     for k, v in latex_map.items(): text = text.replace(k, v)
     text = text.replace('☐', '[ ]').replace('☑', '[x]').replace('•', '-').replace('◦', '-')
     text = text.replace('\u200b', '').replace('\u2022', '-').replace('\u25cf', '-').replace('\u25cb', '-')
-    text = text.replace('\u25a0', '[ ]').replace('\u25a1', '[ ]')
     return text.strip()
 
 # 🌟 HTML RENDERER 🌟
@@ -727,9 +726,7 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     md_content = re.sub(r"^\*\*Marks:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
     md_content = re.sub(r"^\*\*Time:\*\*.*?\n", "", md_content, flags=re.MULTILINE)
     
-    # Optional: Fix any leftover markdown lists from AI output just in case
     md_content = re.sub(r"^\d+\.\s", "**Q.** ", md_content, flags=re.MULTILINE)
-
     md_content = md_content.strip()
     
     logo_html_inline = ""
@@ -799,20 +796,21 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     
     col_style = "column-count: 2; column-gap: 15mm; column-rule: 1px solid #000; font-size: 14px;" if is_2_col else "font-size: 16px;"
 
-    # 🌟 FIX: Added CSS to handle spacing between paragraphs (questions) better
     return f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
     body {{ background: #f0f0f0; font-family: 'Noto Sans', 'Nirmala UI', 'Times New Roman', serif; margin: 0; padding: 20px; display: flex; justify-content: center; }} 
     .a4-page {{ background: white; width: 210mm; min-height: 297mm; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.2); box-sizing: border-box; position: relative; overflow: hidden; }} 
-    .watermark {{ position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 80px; color: rgba(0, 0, 0, 0.05); z-index: 0; pointer-events: none; white-space: nowrap; font-weight: bold; }}
+    .watermark {{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 85px; color: rgba(0, 0, 0, 0.06); z-index: -9999; pointer-events: none; white-space: nowrap; font-weight: bold; text-transform: uppercase; }}
     table {{ width: 100%; border-collapse: collapse; border: none; position: relative; z-index: 1; }}
     td {{ border: none; padding: 0; }}
     @media print {{ 
         @page {{ size: A4; margin: 0; }} 
         body {{ background: white; padding: 0; margin: 0; display: block; }} 
         .a4-page {{ box-shadow: none; width: 100%; min-height: auto; padding: 10mm; margin: 0; page-break-after: always; }} 
+        .watermark {{ color: rgba(0, 0, 0, 0.06) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
         tfoot {{ display: table-footer-group; }}
     }} 
     h1, h2, h3 {{ text-align: center; column-span: all; }} 
+    h2 {{ font-size: 16px; border-bottom: 1px dashed #ccc; padding-bottom: 5px; }}
     .content-body {{ {col_style} position: relative; z-index: 1; text-align: justify; }} 
     .content-body p {{ margin-bottom: 8px; margin-top: 4px; }}
     .footer-content {{ text-align: center; margin-top: 20px; padding-top: 10px; border-top: 2px dashed #bbb; font-size: 13px; color: #444; position: relative; z-index: 1; background: white; }}
@@ -830,8 +828,6 @@ def create_a4_html(md_content, i_name, i_address, i_contact, t_name, inst_logo=N
     </div></body></html>"""
 
 def html_to_pdf(html_string):
-    """Converts our A4 HTML paper into PDF bytes. Returns None on failure
-    (xhtml2pdf can be picky about some CSS — caller should handle None)."""
     try:
         buf = BytesIO()
         result = pisa.CreatePDF(html_string, dest=buf)
@@ -839,7 +835,7 @@ def html_to_pdf(html_string):
             return None
         return buf.getvalue()
     except Exception as e:
-        print(f"[PDF Generation Error] {e}")
+        logging.error(f"[PDF Generation Error] {e}")
         return None
 
 # 🌟 WORD RENDERER 🌟
@@ -863,21 +859,16 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
     
     rFonts = style.element.rPr.rFonts
     if rFonts is not None:
-        rFonts.set(qn('w:cs'), 'Noto Sans Devanagari') 
+        rFonts.set(qn('w:cs'), 'Nirmala UI') 
         rFonts.set(qn('w:ascii'), 'Arial')
         rFonts.set(qn('w:hAnsi'), 'Arial')
-    style_lang = style.element.rPr.find(qn('w:lang'))
-    if style_lang is None:
-        style_lang = style.element.rPr.makeelement(qn('w:lang'), {})
-        style.element.rPr.append(style_lang)
-    style_lang.set(qn('w:bidi'), 'hi-IN')
     
     for i in range(3):
         try:
             h_style = doc.styles[f'Heading {i}']
             h_style.font.name = 'Arial'
             if h_style.element.rPr.rFonts is not None:
-                h_style.element.rPr.rFonts.set(qn('w:cs'), 'Noto Sans Devanagari')
+                h_style.element.rPr.rFonts.set(qn('w:cs'), 'Nirmala UI')
                 h_style.element.rPr.rFonts.set(qn('w:ascii'), 'Arial')
                 h_style.element.rPr.rFonts.set(qn('w:hAnsi'), 'Arial')
             h_style.font.color.rgb = RGBColor(0, 0, 0)
@@ -896,26 +887,6 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         for section in doc.sections:
             section.top_margin = section.bottom_margin = section.left_margin = section.right_margin = Inches(0.4)
 
-    def apply_cs_font(run):
-        rpr = run._r.get_or_add_rPr()
-        rfonts = rpr.find(qn('w:rFonts'))
-        if rfonts is None:
-            rfonts = rpr.makeelement(qn('w:rFonts'), {})
-            rpr.append(rfonts)
-        rfonts.set(qn('w:cs'), 'Noto Sans Devanagari')
-        rfonts.set(qn('w:ascii'), 'Arial')
-        rfonts.set(qn('w:hAnsi'), 'Arial')
-        # Critical: without an explicit language tag, Word doesn't reliably
-        # classify Devanagari text as "complex script" and may render it
-        # with the ascii font (Arial, no Devanagari glyphs = tofu boxes) on
-        # ANY platform, regardless of which cs font we specify above. This
-        # tag is what actually makes Word route the text correctly.
-        lang = rpr.find(qn('w:lang'))
-        if lang is None:
-            lang = rpr.makeelement(qn('w:lang'), {})
-            rpr.append(lang)
-        lang.set(qn('w:bidi'), 'hi-IN')
-
     def insert_chate_header():
         title_table = doc.add_table(rows=1, cols=1)
         p1 = title_table.cell(0,0).paragraphs[0]
@@ -932,7 +903,6 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         r1 = p1.add_run(i_name.upper())
         r1.bold = True
         r1.font.size = Pt(18)
-        apply_cs_font(r1)
         
         details_table = doc.add_table(rows=1, cols=3)
         details_table.autofit = False
@@ -945,27 +915,23 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         r3 = p3.add_run(f"Class : {grade}\nTime : {exam_time}")
         r3.bold = True
         r3.font.size = Pt(10)
-        apply_cs_font(r3)
 
         p4 = details_table.cell(0,1).paragraphs[0]
         p4.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r4 = p4.add_run("\n[ EXAMINATION ]")
         r4.bold = True
         r4.font.size = Pt(12)
-        apply_cs_font(r4)
 
         p2 = details_table.cell(0,2).paragraphs[0]
         p2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         r2 = p2.add_run(f"Sub.: {sub}\nMarks: {total_m}")
         r2.bold = True
         r2.font.size = Pt(10)
-        apply_cs_font(r2)
         
         doc.add_paragraph("__________________________________________________________________________").alignment = WD_ALIGN_PARAGRAPH.CENTER
         pt = doc.add_paragraph("MULTIPLE CHOICE QUESTIONS & THEORY")
         pt.alignment = WD_ALIGN_PARAGRAPH.CENTER
         pt.runs[0].bold = True
-        apply_cs_font(pt.runs[0])
         
         main_heading_text = topics.strip().upper() if topics.strip() != "" else sub.upper()
         ptopics = doc.add_paragraph(main_heading_text)
@@ -973,7 +939,6 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         ptopics.runs[0].underline = True
         ptopics.runs[0].font.size = Pt(14)
         ptopics.runs[0].bold = True
-        apply_cs_font(ptopics.runs[0])
         doc.add_paragraph() 
 
     insert_chate_header()
@@ -1007,7 +972,14 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
             for i, part in enumerate(parts):
                 run = p.add_run(part)
                 if i % 2 == 1: run.bold = True
-                apply_cs_font(run)
+                rpr = run._r.get_or_add_rPr()
+                rfonts = rpr.find(qn('w:rFonts'))
+                if rfonts is None:
+                    rfonts = rpr.makeelement(qn('w:rFonts'), {})
+                    rpr.append(rfonts)
+                rfonts.set(qn('w:cs'), 'Nirmala UI')
+                rfonts.set(qn('w:ascii'), 'Arial')
+                rfonts.set(qn('w:hAnsi'), 'Arial')
                 
     if doc.sections:
         footer = doc.sections[0].footer
@@ -1024,13 +996,11 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
             
         run_name = footer_para.add_run(f"{i_name}  |  ")
         run_name.font.size = Pt(10)
-        apply_cs_font(run_name)
         run_name.font.bold = True
         run_name.font.color.rgb = RGBColor(100, 100, 100)
         
         run_rest = footer_para.add_run(f"📍 {i_address}  |  📞 {i_contact}  |  👨‍🏫 {t_name}")
         run_rest.font.size = Pt(10)
-        apply_cs_font(run_rest)
         run_rest.font.color.rgb = RGBColor(100, 100, 100)
             
     bio = BytesIO()
@@ -1154,14 +1124,8 @@ with tab_create:
 
             with st.spinner("Generating Paper..."):
                 try:
-                    # Locked so another user's concurrent request can't run
-                    # with this session's API key (or vice versa) — see
-                    # GEMINI_LOCK definition for why this matters.
-                    with GEMINI_LOCK:
-                        genai.configure(api_key=active_api_key)
-                        model = genai.GenerativeModel(working_model_name)
-                        resp = model.generate_content(prompt)
-                    blocks = resp.text.split("|||")
+                    resp_text = generate_gemini_content(prompt, active_api_key, working_model_name)
+                    blocks = resp_text.split("|||")
                     st.session_state.blocks = [{'id': str(uuid.uuid4()), 'text': b.strip()} for b in blocks if b.strip()]
                     st.session_state.blocks_saved = False
                     st.session_state.file_name = f"{sub}_Paper"
@@ -1169,7 +1133,7 @@ with tab_create:
                     st.rerun()
                 except Exception as e:
                     error_msg = str(e).lower()
-                    print(f"[Generation Error] {e}")  # full detail server-side only
+                    logging.error(f"[Generation Error] {e}") 
                     if "429" in error_msg or "quota" in error_msg:
                         st.error("🚨 The daily generation limit has been reached! Try again later or add your own API key in Advanced Settings.")
                     else:
@@ -1189,15 +1153,11 @@ with tab_create:
                         try:
                             new_q_text = regenerate_single_question(b['text'], active_api_key, working_model_name)
                             st.session_state.blocks[i]['text'] = new_q_text
-                            # Assign a fresh id so the text_area widget below gets a new
-                            # key on rerun — reusing the old key would keep showing the
-                            # old text, since Streamlit widgets ignore new default values
-                            # once a key already has a stored value.
                             st.session_state.blocks[i]['id'] = str(uuid.uuid4())
                             st.session_state.blocks_saved = False
                             st.rerun()
                         except Exception as e:
-                            print(f"[Regenerate Error] {e}")
+                            logging.error(f"[Regenerate Error] {e}")
                             st.error("Couldn't regenerate this question. Please try again.")
         
         paper_md = "\n\n".join([b['text'] for b in st.session_state.blocks])
@@ -1220,7 +1180,7 @@ with tab_create:
                 st.session_state.blocks_saved = True
                 st.success("Saved!")
             except Exception as e:
-                print(f"[Save History Error] {e}")
+                logging.error(f"[Save History Error] {e}")
                 st.error("Couldn't save to Cloud History. Please try again.")
 
 with tab_digitize:
@@ -1250,19 +1210,16 @@ with tab_digitize:
                         "add a title, institute name, header, or footer. Only fix obvious spelling/OCR mistakes. "
                         "Separate each distinct question with the delimiter ||| on its own line."
                     )
-                    contents = [digi_prompt] + [Image.open(f) for f in digi_images]
-                    with GEMINI_LOCK:
-                        genai.configure(api_key=active_api_key)
-                        model = genai.GenerativeModel(working_model_name)
-                        resp = model.generate_content(contents)
-                    d_blocks = resp.text.split("|||")
+                    images = [Image.open(f) for f in digi_images]
+                    resp_text = generate_gemini_content(digi_prompt, active_api_key, working_model_name, images=images)
+                    d_blocks = resp_text.split("|||")
                     st.session_state.digi_blocks = [{'id': str(uuid.uuid4()), 'text': b.strip()} for b in d_blocks if b.strip()]
                     st.session_state.digi_saved = False
                     update_paper_count(st.session_state.username)
                     st.rerun()
                 except Exception as e:
                     error_msg = str(e).lower()
-                    print(f"[Digitize Error] {e}")
+                    logging.error(f"[Digitize Error] {e}")
                     if "429" in error_msg or "quota" in error_msg:
                         st.error("🚨 The daily generation limit has been reached! Try again later or add your own API key in Advanced Settings.")
                     else:
@@ -1297,7 +1254,7 @@ with tab_digitize:
                 st.session_state.digi_saved = True
                 st.success("Saved!")
             except Exception as e:
-                print(f"[Digitize Save History Error] {e}")
+                logging.error(f"[Digitize Save History Error] {e}")
                 st.error("Couldn't save to Cloud History. Please try again.")
 
 with tab_history:
@@ -1307,7 +1264,7 @@ with tab_history:
             res = supabase.table("papers").select("*").eq("username", st.session_state.username).order("id", desc=True).execute()
             history_error = None
         except Exception as e:
-            print(f"[History Load Error] {e}")
+            logging.error(f"[History Load Error] {e}")
             res = None
             history_error = "Couldn't load your history right now. Please refresh."
 
