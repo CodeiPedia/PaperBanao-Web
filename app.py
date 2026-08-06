@@ -611,7 +611,7 @@ active_api_key = user_api_key if user_api_key.strip() != "" else SERVER_API_KEY
 def get_working_model_name(api_key):
     url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
     try:
-        res = requests.get(url)
+        res = requests.get(url, timeout=30)
         if res.status_code == 200:
             models = [m['name'] for m in res.json().get('models', []) if 'generateContent' in m.get('supportedGenerationMethods', [])]
             flash_models = [m for m in models if '1.5-flash' in m]
@@ -632,6 +632,11 @@ def generate_gemini_content(prompt, api_key, model_name="gemini-1.5-flash", imag
     if images:
         for img in images:
             buffered = BytesIO()
+            # PNGs (and some other formats) can be in RGBA/P/LA mode, which
+            # the JPEG encoder can't write (it has no alpha channel support).
+            # Converting to RGB first prevents a crash on transparent PNGs.
+            if img.mode != "RGB":
+                img = img.convert("RGB")
             img.save(buffered, format="JPEG")
             img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
             parts.append({
@@ -643,7 +648,9 @@ def generate_gemini_content(prompt, api_key, model_name="gemini-1.5-flash", imag
             
     payload = {"contents": [{"parts": parts}]}
     
-    response = requests.post(url, headers=headers, json=payload)
+    # Timeout prevents the app from hanging forever for a user if the
+    # Gemini API stalls or the network drops mid-request.
+    response = requests.post(url, headers=headers, json=payload, timeout=90)
     if response.status_code == 200:
         data = response.json()
         try:
@@ -652,7 +659,10 @@ def generate_gemini_content(prompt, api_key, model_name="gemini-1.5-flash", imag
             logging.error("Unexpected response format from Gemini API.")
             raise Exception("Unexpected response format from Gemini API.")
     else:
-        error_msg = response.json().get('error', {}).get('message', 'Unknown error')
+        try:
+            error_msg = response.json().get('error', {}).get('message', 'Unknown error')
+        except ValueError:
+            error_msg = response.text[:200]
         logging.error(f"Gemini API Error {response.status_code}: {error_msg}")
         raise Exception(f"API Error {response.status_code}: {error_msg}")
 
@@ -859,16 +869,21 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
     
     rFonts = style.element.rPr.rFonts
     if rFonts is not None:
-        rFonts.set(qn('w:cs'), 'Nirmala UI') 
+        rFonts.set(qn('w:cs'), 'Noto Sans Devanagari') 
         rFonts.set(qn('w:ascii'), 'Arial')
         rFonts.set(qn('w:hAnsi'), 'Arial')
+    style_lang = style.element.rPr.find(qn('w:lang'))
+    if style_lang is None:
+        style_lang = style.element.rPr.makeelement(qn('w:lang'), {})
+        style.element.rPr.append(style_lang)
+    style_lang.set(qn('w:bidi'), 'hi-IN')
     
     for i in range(3):
         try:
             h_style = doc.styles[f'Heading {i}']
             h_style.font.name = 'Arial'
             if h_style.element.rPr.rFonts is not None:
-                h_style.element.rPr.rFonts.set(qn('w:cs'), 'Nirmala UI')
+                h_style.element.rPr.rFonts.set(qn('w:cs'), 'Noto Sans Devanagari')
                 h_style.element.rPr.rFonts.set(qn('w:ascii'), 'Arial')
                 h_style.element.rPr.rFonts.set(qn('w:hAnsi'), 'Arial')
             h_style.font.color.rgb = RGBColor(0, 0, 0)
@@ -887,6 +902,26 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         for section in doc.sections:
             section.top_margin = section.bottom_margin = section.left_margin = section.right_margin = Inches(0.4)
 
+    def apply_cs_font(run):
+        rpr = run._r.get_or_add_rPr()
+        rfonts = rpr.find(qn('w:rFonts'))
+        if rfonts is None:
+            rfonts = rpr.makeelement(qn('w:rFonts'), {})
+            rpr.append(rfonts)
+        rfonts.set(qn('w:cs'), 'Noto Sans Devanagari')
+        rfonts.set(qn('w:ascii'), 'Arial')
+        rfonts.set(qn('w:hAnsi'), 'Arial')
+        # Without an explicit language tag, Word doesn't reliably classify
+        # Devanagari text as "complex script" and may render it with the
+        # ascii font (Arial, no Devanagari glyphs = tofu boxes) regardless
+        # of the w:cs font specified above. This tag is what makes Word
+        # actually route the text correctly.
+        lang = rpr.find(qn('w:lang'))
+        if lang is None:
+            lang = rpr.makeelement(qn('w:lang'), {})
+            rpr.append(lang)
+        lang.set(qn('w:bidi'), 'hi-IN')
+
     def insert_chate_header():
         title_table = doc.add_table(rows=1, cols=1)
         p1 = title_table.cell(0,0).paragraphs[0]
@@ -903,6 +938,7 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         r1 = p1.add_run(i_name.upper())
         r1.bold = True
         r1.font.size = Pt(18)
+        apply_cs_font(r1)
         
         details_table = doc.add_table(rows=1, cols=3)
         details_table.autofit = False
@@ -915,23 +951,27 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         r3 = p3.add_run(f"Class : {grade}\nTime : {exam_time}")
         r3.bold = True
         r3.font.size = Pt(10)
+        apply_cs_font(r3)
 
         p4 = details_table.cell(0,1).paragraphs[0]
         p4.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r4 = p4.add_run("\n[ EXAMINATION ]")
         r4.bold = True
         r4.font.size = Pt(12)
+        apply_cs_font(r4)
 
         p2 = details_table.cell(0,2).paragraphs[0]
         p2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         r2 = p2.add_run(f"Sub.: {sub}\nMarks: {total_m}")
         r2.bold = True
         r2.font.size = Pt(10)
+        apply_cs_font(r2)
         
         doc.add_paragraph("__________________________________________________________________________").alignment = WD_ALIGN_PARAGRAPH.CENTER
         pt = doc.add_paragraph("MULTIPLE CHOICE QUESTIONS & THEORY")
         pt.alignment = WD_ALIGN_PARAGRAPH.CENTER
         pt.runs[0].bold = True
+        apply_cs_font(pt.runs[0])
         
         main_heading_text = topics.strip().upper() if topics.strip() != "" else sub.upper()
         ptopics = doc.add_paragraph(main_heading_text)
@@ -939,6 +979,7 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         ptopics.runs[0].underline = True
         ptopics.runs[0].font.size = Pt(14)
         ptopics.runs[0].bold = True
+        apply_cs_font(ptopics.runs[0])
         doc.add_paragraph() 
 
     insert_chate_header()
@@ -972,14 +1013,7 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
             for i, part in enumerate(parts):
                 run = p.add_run(part)
                 if i % 2 == 1: run.bold = True
-                rpr = run._r.get_or_add_rPr()
-                rfonts = rpr.find(qn('w:rFonts'))
-                if rfonts is None:
-                    rfonts = rpr.makeelement(qn('w:rFonts'), {})
-                    rpr.append(rfonts)
-                rfonts.set(qn('w:cs'), 'Nirmala UI')
-                rfonts.set(qn('w:ascii'), 'Arial')
-                rfonts.set(qn('w:hAnsi'), 'Arial')
+                apply_cs_font(run)
                 
     if doc.sections:
         footer = doc.sections[0].footer
@@ -998,10 +1032,12 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
         run_name.font.size = Pt(10)
         run_name.font.bold = True
         run_name.font.color.rgb = RGBColor(100, 100, 100)
+        apply_cs_font(run_name)
         
         run_rest = footer_para.add_run(f"📍 {i_address}  |  📞 {i_contact}  |  👨‍🏫 {t_name}")
         run_rest.font.size = Pt(10)
         run_rest.font.color.rgb = RGBColor(100, 100, 100)
+        apply_cs_font(run_rest)
             
     bio = BytesIO()
     doc.save(bio)
@@ -1173,6 +1209,8 @@ with tab_create:
             c3.download_button("📕 PDF", f_pdf, f"{st.session_state.current_subject}.pdf", "application/pdf")
         else:
             c3.caption("PDF unavailable")
+        if paper_language in ("Hindi", "Bilingual"):
+            st.caption("💡 Hindi text in the Word file needs the free 'Noto Sans Devanagari' font installed on the computer opening it (one-time setup). It's not needed for the PDF.")
         if c4.button("☁️ Save History"):
             data = {"username": st.session_state.username, "date": datetime.now().strftime("%Y-%m-%d"), "subject": st.session_state.current_subject, "board": board_format, "content": paper_md}
             try:
@@ -1247,6 +1285,7 @@ with tab_digitize:
             gc3.download_button("📕 PDF", digi_pdf, f"{digi_subject or 'Digitized'}_Paper.pdf", "application/pdf")
         else:
             gc3.caption("PDF unavailable")
+        st.caption("💡 If the Word file shows boxes instead of Hindi text, install the free 'Noto Sans Devanagari' font on the computer opening it (one-time setup). Not needed for the PDF.")
         if gc4.button("☁️ Save History", key="digi_save_history"):
             data = {"username": st.session_state.username, "date": datetime.now().strftime("%Y-%m-%d"), "subject": digi_subject or "Digitized Paper", "board": "Digitized", "content": digi_md}
             try:
