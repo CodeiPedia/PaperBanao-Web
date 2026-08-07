@@ -717,6 +717,53 @@ def extract_text_from_pdf(uploaded_file, start_page, end_page):
         logging.error(f"[PDF Extraction Error] {e}")
         return ""
 
+def render_question_config(key_prefix=""):
+    """Renders the Type/Count/Marks/Difficulty grid (MCQ, FIB, True/False,
+    Short, Long) and returns all the values. key_prefix keeps widget keys
+    unique when this is rendered more than once on the same page (e.g. once
+    for the general Create Paper tab, once for the BSEB tab)."""
+    h1, h2, h3, h4 = st.columns([3, 2, 2, 3])
+    h1.write("**Type**"); h2.write("**Count**"); h3.write("**Marks**"); h4.write("**Diff**")
+
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
+    c1.write("MCQs")
+    mcq_c = c2.number_input("mcq_c", 0, 50, 5, label_visibility="collapsed", key=f"{key_prefix}m_c")
+    mcq_m = c3.number_input("mcq_m", 1, 10, 1, label_visibility="collapsed", key=f"{key_prefix}m_m")
+    mcq_d = c4.selectbox("mcq_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key=f"{key_prefix}m_d")
+
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
+    c1.write("Fill in the Blanks")
+    fib_c = c2.number_input("fib_c", 0, 20, 3, label_visibility="collapsed", key=f"{key_prefix}f_c")
+    fib_m = c3.number_input("fib_m", 1, 10, 1, label_visibility="collapsed", key=f"{key_prefix}f_m")
+    fib_d = c4.selectbox("fib_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key=f"{key_prefix}f_d")
+
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
+    c1.write("True / False")
+    tf_c = c2.number_input("tf_c", 0, 20, 3, label_visibility="collapsed", key=f"{key_prefix}t_c")
+    tf_m = c3.number_input("tf_m", 1, 10, 1, label_visibility="collapsed", key=f"{key_prefix}t_m")
+    tf_d = c4.selectbox("tf_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key=f"{key_prefix}t_d")
+
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
+    c1.write("Short Answer")
+    short_c = c2.number_input("sh_c", 0, 20, 3, label_visibility="collapsed", key=f"{key_prefix}s_c")
+    short_m = c3.number_input("sh_m", 1, 10, 2, label_visibility="collapsed", key=f"{key_prefix}s_m")
+    short_d = c4.selectbox("sh_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key=f"{key_prefix}s_d", index=1)
+
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
+    c1.write("Long Answer")
+    long_c = c2.number_input("l_c", 0, 20, 2, label_visibility="collapsed", key=f"{key_prefix}l_c")
+    long_m = c3.number_input("l_m", 1, 20, 5, label_visibility="collapsed", key=f"{key_prefix}l_m")
+    long_d = c4.selectbox("l_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key=f"{key_prefix}l_d", index=2)
+
+    total_q = mcq_c + fib_c + tf_c + short_c + long_c
+    total_m = (mcq_c * mcq_m) + (fib_c * fib_m) + (tf_c * tf_m) + (short_c * short_m) + (long_c * long_m)
+
+    st.markdown("---")
+    st.info(f"📊 Total Questions: {total_q} | 🏆 Maximum Marks: {total_m}")
+
+    return (mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m,
+            short_c, short_d, short_m, long_c, long_d, long_m, total_q, total_m)
+
 def build_question_prompt(mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m, short_c, short_d, short_m, long_c, long_d, long_m, include_answers, selected_language, subject):
     reqs = []
     if mcq_c > 0: reqs.append(f"## Multiple Choice Questions [{mcq_m} Mark(s) Each]\n- {mcq_c} MCQs (Difficulty: {mcq_d}).")
@@ -1113,7 +1160,7 @@ def create_word_docx(md_content, i_name, i_address, i_contact, t_name, inst_logo
 # ==========================================
 # --- MAIN LAYOUT ---
 # ==========================================
-tab_create, tab_digitize, tab_history = st.tabs(["🏠 Create Paper", "📷 Digitize Handwritten", "🗂️ Cloud History"])
+tab_create, tab_bseb, tab_digitize, tab_history = st.tabs(["🏠 Create Paper", "🎓 BSEB Board", "📷 Digitize Handwritten", "🗂️ Cloud History"])
 
 with tab_create:
     if not is_pro and papers_used >= FREE_LIMIT:
@@ -1130,46 +1177,7 @@ with tab_create:
         c1, c2 = st.columns(2)
         sub = c1.text_input("Subject")
         grade = c2.text_input("Class")
-
-        use_curriculum = st.toggle("📚 Pick chapters from a saved Class/Subject list (BSEB/NCERT)", value=False,
-                                     help="Select from chapters you've saved before, or add a new list for this class/subject.")
-        chapter_topics = ""
-        if use_curriculum:
-            cc1, cc2 = st.columns(2)
-            sel_class = cc1.selectbox("Class", CLASS_OPTIONS, key="curr_class")
-            existing_subjects = get_subjects_for_class(sel_class)
-            sel_subjects = cc2.multiselect("Subject(s)", existing_subjects, key="curr_subjects")
-
-            new_subject = st.text_input("Add a new subject for this class (optional)", key="curr_new_subject", placeholder="e.g. Mathematics")
-            if new_subject.strip() and new_subject.strip() not in sel_subjects:
-                sel_subjects = sel_subjects + [new_subject.strip()]
-
-            all_selected_chapters = []
-            for subj in sel_subjects:
-                with st.expander(f"📖 {subj} — chapters", expanded=True):
-                    existing_chapters = get_chapters(sel_class, subj)
-                    chosen_chapters = st.multiselect(f"Select chapters ({subj})", existing_chapters, key=f"chap_sel_{sel_class}_{subj}")
-                    add_chapters_text = st.text_area(
-                        f"Add new chapters for {subj} (comma-separated)", key=f"chap_add_{sel_class}_{subj}",
-                        placeholder="e.g. Real Numbers, Polynomials, Triangles",
-                        help="These get saved for everyone using PaperBanao, so next time you (or others) just select them."
-                    )
-                    if st.button(f"💾 Save chapters for {subj}", key=f"chap_save_{sel_class}_{subj}"):
-                        new_list = existing_chapters + [c.strip() for c in add_chapters_text.split(",") if c.strip()]
-                        if save_chapters(sel_class, subj, new_list):
-                            st.success(f"Saved! Chapters for {sel_class} - {subj} updated.")
-                            st.rerun()
-                        else:
-                            st.error("Couldn't save chapters. Please try again.")
-                    all_selected_chapters.extend([f"{subj}: {c}" for c in chosen_chapters])
-                    all_selected_chapters.extend([f"{subj}: {c.strip()}" for c in add_chapters_text.split(",") if c.strip()])
-
-            chapter_topics = "; ".join(all_selected_chapters)
-            if chapter_topics:
-                st.caption(f"✅ Using: {chapter_topics}")
-
-        extra_topics = st.text_area("Additional/Specific Topics (optional)")
-        syl = ", ".join(filter(None, [chapter_topics, extra_topics.strip()]))
+        syl = st.text_area("Topics")
     else:
         c1, c2 = st.columns(2)
         sub = c1.text_input("Subject (PDF)")
@@ -1188,49 +1196,8 @@ with tab_create:
 
     st.markdown("---")
     st.markdown("### 2. Counts & Marks")
-    h1, h2, h3, h4 = st.columns([3, 2, 2, 3])
-    h1.write("**Type**"); h2.write("**Count**"); h3.write("**Marks**"); h4.write("**Diff**")
-
-    # MCQ Row
-    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    c1.write("MCQs")
-    mcq_c = c2.number_input("mcq_c", 0, 50, 5, label_visibility="collapsed", key="m_c")
-    mcq_m = c3.number_input("mcq_m", 1, 10, 1, label_visibility="collapsed", key="m_m")
-    mcq_d = c4.selectbox("mcq_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="m_d")
-
-    # FIB Row
-    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    c1.write("Fill in the Blanks")
-    fib_c = c2.number_input("fib_c", 0, 20, 3, label_visibility="collapsed", key="f_c")
-    fib_m = c3.number_input("fib_m", 1, 10, 1, label_visibility="collapsed", key="f_m")
-    fib_d = c4.selectbox("fib_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="f_d")
-
-    # True/False Row
-    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    c1.write("True / False")
-    tf_c = c2.number_input("tf_c", 0, 20, 3, label_visibility="collapsed", key="t_c")
-    tf_m = c3.number_input("tf_m", 1, 10, 1, label_visibility="collapsed", key="t_m")
-    tf_d = c4.selectbox("tf_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="t_d")
-
-    # Short Row
-    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    c1.write("Short Answer")
-    short_c = c2.number_input("sh_c", 0, 20, 3, label_visibility="collapsed", key="s_c")
-    short_m = c3.number_input("sh_m", 1, 10, 2, label_visibility="collapsed", key="s_m")
-    short_d = c4.selectbox("sh_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="s_d", index=1)
-
-    # Long Row
-    c1, c2, c3, c4 = st.columns([3, 2, 2, 3])
-    c1.write("Long Answer")
-    long_c = c2.number_input("l_c", 0, 20, 2, label_visibility="collapsed", key="l_c")
-    long_m = c3.number_input("l_m", 1, 20, 5, label_visibility="collapsed", key="l_m")
-    long_d = c4.selectbox("l_d", ["Easy", "Medium", "Hard"], label_visibility="collapsed", key="l_d", index=2)
-
-    total_q = mcq_c + fib_c + tf_c + short_c + long_c
-    total_m = (mcq_c * mcq_m) + (fib_c * fib_m) + (tf_c * tf_m) + (short_c * short_m) + (long_c * long_m)
-    
-    st.markdown("---")
-    st.info(f"📊 Total Questions: {total_q} | 🏆 Maximum Marks: {total_m}")
+    (mcq_c, mcq_d, mcq_m, fib_c, fib_d, fib_m, tf_c, tf_d, tf_m,
+     short_c, short_d, short_m, long_c, long_d, long_m, total_q, total_m) = render_question_config()
 
     if "blocks_saved" not in st.session_state: st.session_state.blocks_saved = True
     if "confirm_overwrite" not in st.session_state: st.session_state.confirm_overwrite = False
@@ -1345,6 +1312,160 @@ with tab_create:
                 st.success("Saved!")
             except Exception as e:
                 logging.error(f"[Save History Error] {e}")
+                st.error("Couldn't save to Cloud History. Please try again.")
+
+with tab_bseb:
+    if not is_pro and papers_used >= FREE_LIMIT:
+        st.error("Free Trial Expired! Please Upgrade.")
+        st.stop()
+
+    st.markdown("### 🎓 Bihar Board (BSEB) Paper Builder")
+    st.caption("Pick class, subject(s), and chapters from your saved syllabus list — then set question types and marks. Tip: set Board Pattern to 'BSEB (Bihar Board)' in the sidebar for BSEB-style formatting.")
+
+    st.markdown("#### 1. Class & Subjects")
+    bc1, bc2 = st.columns(2)
+    bseb_class = bc1.selectbox("Class", CLASS_OPTIONS, key="bseb_class")
+    bseb_existing_subjects = get_subjects_for_class(bseb_class)
+    bseb_sel_subjects = bc2.multiselect("Subject(s)", bseb_existing_subjects, key="bseb_subjects")
+
+    bseb_new_subject = st.text_input("Add a new subject for this class (optional)", key="bseb_new_subject", placeholder="e.g. Mathematics")
+    if bseb_new_subject.strip() and bseb_new_subject.strip() not in bseb_sel_subjects:
+        bseb_sel_subjects = bseb_sel_subjects + [bseb_new_subject.strip()]
+
+    st.markdown("#### 2. Chapters")
+    bseb_all_chapters = []
+    for subj in bseb_sel_subjects:
+        with st.expander(f"📖 {subj} — chapters", expanded=True):
+            existing_chapters = get_chapters(bseb_class, subj)
+            chosen_chapters = st.multiselect(f"Select chapters ({subj})", existing_chapters, key=f"bseb_chap_sel_{bseb_class}_{subj}")
+            add_chapters_text = st.text_area(
+                f"Add new chapters for {subj} (comma-separated)", key=f"bseb_chap_add_{bseb_class}_{subj}",
+                placeholder="e.g. Real Numbers, Polynomials, Triangles",
+                help="Saved for everyone using PaperBanao — next time, just select them instead of retyping."
+            )
+            if st.button(f"💾 Save chapters for {subj}", key=f"bseb_chap_save_{bseb_class}_{subj}"):
+                new_list = existing_chapters + [c.strip() for c in add_chapters_text.split(",") if c.strip()]
+                if save_chapters(bseb_class, subj, new_list):
+                    st.success(f"Saved! Chapters for {bseb_class} - {subj} updated.")
+                    st.rerun()
+                else:
+                    st.error("Couldn't save chapters. Please try again.")
+            bseb_all_chapters.extend([f"{subj}: {c}" for c in chosen_chapters])
+            bseb_all_chapters.extend([f"{subj}: {c.strip()}" for c in add_chapters_text.split(",") if c.strip()])
+
+    bseb_chapter_topics = "; ".join(bseb_all_chapters)
+    if bseb_chapter_topics:
+        st.caption(f"✅ Selected: {bseb_chapter_topics}")
+
+    st.markdown("#### 3. Specific Topics (optional)")
+    bseb_extra_topics = st.text_area("Narrow it down further within the chosen chapters, if needed", key="bseb_extra_topics")
+    bseb_syl = ", ".join(filter(None, [bseb_chapter_topics, bseb_extra_topics.strip()]))
+    bseb_sub = ", ".join(bseb_sel_subjects) if bseb_sel_subjects else ""
+
+    st.markdown("---")
+    st.markdown("#### 4. Counts & Marks")
+    (b_mcq_c, b_mcq_d, b_mcq_m, b_fib_c, b_fib_d, b_fib_m, b_tf_c, b_tf_d, b_tf_m,
+     b_short_c, b_short_d, b_short_m, b_long_c, b_long_d, b_long_m, b_total_q, b_total_m) = render_question_config(key_prefix="bseb_")
+
+    if "bseb_blocks" not in st.session_state: st.session_state.bseb_blocks = []
+    if "bseb_blocks_saved" not in st.session_state: st.session_state.bseb_blocks_saved = True
+
+    if st.button("🚀 Generate BSEB Paper", use_container_width=True):
+        if not bseb_sel_subjects:
+            st.error("Please select at least one subject.")
+        elif not bseb_chapter_topics and not bseb_extra_topics.strip():
+            st.error("Please select at least one chapter, or add specific topics.")
+        elif b_total_q == 0:
+            st.error("Please add at least one question (set a count > 0 for some question type).")
+        else:
+            st.session_state.current_subject = bseb_sub
+            st.session_state.current_class = bseb_class
+            st.session_state.current_marks = str(b_total_m)
+
+            b_q_reqs = build_question_prompt(
+                b_mcq_c, b_mcq_d, b_mcq_m, b_fib_c, b_fib_d, b_fib_m, b_tf_c, b_tf_d, b_tf_m,
+                b_short_c, b_short_d, b_short_m, b_long_c, b_long_d, b_long_m,
+                include_answer_key, paper_language, bseb_sub
+            )
+            b_prompt = (
+                f"Subject: {bseb_sub}\nClass: {bseb_class}\nBoard: Bihar Board (BSEB)\nTopics: {bseb_syl}\n\n{b_q_reqs}\n\n"
+                "IMPORTANT: Start directly with the questions. DO NOT generate any Title, Institute Name, Time, or Marks at the top."
+            )
+
+            with st.spinner("Generating BSEB Paper..."):
+                try:
+                    resp_text = generate_gemini_content(b_prompt, active_api_key, working_model_name)
+                    b_blocks = resp_text.split("|||")
+                    st.session_state.bseb_blocks = [{'id': str(uuid.uuid4()), 'text': b.strip()} for b in b_blocks if b.strip()]
+                    st.session_state.bseb_blocks_saved = False
+                    update_paper_count(st.session_state.username)
+                    st.rerun()
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    logging.error(f"[BSEB Generation Error] {e}")
+                    if "429" in error_msg or "quota" in error_msg:
+                        st.error("🚨 The daily generation limit has been reached! Try again later or add your own API key in Advanced Settings.")
+                    else:
+                        st.error("Something went wrong generating the paper. Please try again.")
+
+    if st.session_state.bseb_blocks:
+        st.markdown("---")
+        with st.expander("🛠️ Edit Questions", expanded=False):
+            st.caption("Regenerating a question also updates its matching Answer Key entry, if one exists.")
+            for i, b in enumerate(st.session_state.bseb_blocks):
+                edit_col, regen_col = st.columns([5, 1])
+                new_text = edit_col.text_area(f"Question {i+1}", b['text'], height=100, key=f"bseb_block_text_{b['id']}")
+                if new_text != st.session_state.bseb_blocks[i]['text']:
+                    st.session_state.bseb_blocks[i]['text'] = new_text
+                    st.session_state.bseb_blocks_saved = False
+                if regen_col.button("🔄 Regenerate", key=f"bseb_regen_{b['id']}", help="Ask AI to write a fresh version of this question (and its answer key entry, if present)"):
+                    with st.spinner("Regenerating..."):
+                        try:
+                            old_number = extract_question_number(b['text'])
+                            new_q_text, new_answer_text = regenerate_single_question(b['text'], active_api_key, working_model_name, bseb_sub, bseb_syl)
+                            st.session_state.bseb_blocks[i]['text'] = new_q_text
+                            st.session_state.bseb_blocks[i]['id'] = str(uuid.uuid4())
+                            if new_answer_text and old_number:
+                                ans_key_idx = None
+                                for j, blk in enumerate(st.session_state.bseb_blocks):
+                                    if "ANSWER KEY" in blk['text'].upper():
+                                        ans_key_idx = j
+                                        break
+                                if ans_key_idx is not None:
+                                    for j in range(ans_key_idx + 1, len(st.session_state.bseb_blocks)):
+                                        blk_number = extract_question_number(st.session_state.bseb_blocks[j]['text'])
+                                        if blk_number == old_number:
+                                            st.session_state.bseb_blocks[j]['text'] = f"**Q{old_number}.** {new_answer_text}"
+                                            st.session_state.bseb_blocks[j]['id'] = str(uuid.uuid4())
+                                            break
+                            st.session_state.bseb_blocks_saved = False
+                            st.rerun()
+                        except Exception as e:
+                            logging.error(f"[BSEB Regenerate Error] {e}")
+                            st.error("Couldn't regenerate this question. Please try again.")
+
+        bseb_paper_md = "\n\n".join([b['text'] for b in st.session_state.bseb_blocks])
+        bseb_html = create_a4_html(bseb_paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, bseb_sub, bseb_class, str(b_total_m), exam_time, bseb_syl)
+        bseb_word = create_word_docx(bseb_paper_md, inst_name, inst_address, inst_contact, teacher_name, inst_logo, is_two_column, bseb_sub, bseb_class, str(b_total_m), exam_time, bseb_syl)
+
+        bc1, bc2, bc3, bc4 = st.columns(4)
+        bc1.download_button("🖨️ HTML", bseb_html, f"{bseb_sub or 'BSEB'}_Paper.html", "text/html")
+        bc2.download_button("📄 Word", bseb_word, f"{bseb_sub or 'BSEB'}_Paper.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        bseb_pdf = html_to_pdf(bseb_html)
+        if bseb_pdf:
+            bc3.download_button("📕 PDF", bseb_pdf, f"{bseb_sub or 'BSEB'}_Paper.pdf", "application/pdf")
+        else:
+            bc3.caption("PDF unavailable")
+        if paper_language in ("Hindi", "Bilingual"):
+            st.caption("💡 Hindi text in the Word file needs the free 'Noto Sans Devanagari' font installed on the computer opening it (one-time setup). It's not needed for the PDF.")
+        if bc4.button("☁️ Save History", key="bseb_save_history"):
+            data = {"username": st.session_state.username, "date": datetime.now().strftime("%Y-%m-%d"), "subject": bseb_sub or "BSEB Paper", "board": "BSEB", "content": bseb_paper_md}
+            try:
+                supabase.table("papers").insert(data).execute()
+                st.session_state.bseb_blocks_saved = True
+                st.success("Saved!")
+            except Exception as e:
+                logging.error(f"[BSEB Save History Error] {e}")
                 st.error("Couldn't save to Cloud History. Please try again.")
 
 with tab_digitize:
